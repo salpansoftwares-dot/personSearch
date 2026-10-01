@@ -1,0 +1,374 @@
+[
+  {
+    "example_id": "eval_ke_01_tech_architect",
+    "target_name": "John Kamau",
+    "source_url": "https://safaricom.co.ke/about/leadership/john-kamau",
+    "source_type": "company_page",
+    "source_text": "John Kamau serves as Lead Cloud Architect at Safaricom PLC in Nairobi. Prior to joining Safaricom in 2021, John worked as Senior Systems Engineer at Equity Group Holdings. He holds a Bachelor of Science in Computer Science from the University of Nairobi.",
+    "ground_truth_claims": [
+      {
+        "claim_type": "occupation",
+        "value": "Lead Cloud Architect",
+        "evidence_span": "John Kamau serves as Lead Cloud Architect"
+      },
+      {
+        "claim_type": "organization",
+        "value": "Safaricom PLC",
+        "evidence_span": "Lead Cloud Architect at Safaricom PLC"
+      },
+      {
+        "claim_type": "occupation",
+        "value": "Senior Systems Engineer",
+        "evidence_span": "John worked as Senior Systems Engineer"
+      },
+      {
+        "claim_type": "organization",
+        "value": "Equity Group Holdings",
+        "evidence_span": "Senior Systems Engineer at Equity Group Holdings"
+      },
+      {
+        "claim_type": "education",
+        "value": "Bachelor of Science in Computer Science, University of Nairobi",
+        "evidence_span": "Bachelor of Science in Computer Science from the University of Nairobi"
+      }
+    ],
+    "negative_or_out_of_scope": []
+  },
+  {
+    "example_id": "eval_ke_02_academic_researcher",
+    "target_name": "Dr. Amina Omondi",
+    "source_url": "https://uonbi.ac.ke/staff/amina-omondi",
+    "source_type": "conference_or_university",
+    "source_text": "Dr. Amina Omondi is an Associate Professor of Artificial Intelligence at the University of Nairobi. She completed her PhD in Computational Linguistics at Cambridge University in 2018. Her recent publication, 'Swahili Low-Resource Machine Translation', was presented at EMNLP 2024.",
+    "ground_truth_claims": [
+      {
+        "claim_type": "role",
+        "value": "Associate Professor of Artificial Intelligence",
+        "evidence_span": "Dr. Amina Omondi is an Associate Professor of Artificial Intelligence"
+      },
+      {
+        "claim_type": "organization",
+        "value": "University of Nairobi",
+        "evidence_span": "Artificial Intelligence at the University of Nairobi"
+      },
+      {
+        "claim_type": "education",
+        "value": "PhD in Computational Linguistics, Cambridge University",
+        "evidence_span": "PhD in Computational Linguistics at Cambridge University"
+      },
+      {
+        "claim_type": "publication",
+        "value": "Swahili Low-Resource Machine Translation",
+        "evidence_span": "publication, 'Swahili Low-Resource Machine Translation'"
+      }
+    ],
+    "negative_or_out_of_scope": []
+  },
+  {
+    "example_id": "eval_ke_03_github_dev",
+    "target_name": "Brian Kiprono",
+    "source_url": "https://github.com/briankiprono",
+    "source_type": "github_profile",
+    "source_text": "Brian Kiprono (@briankiprono). Full-Stack Engineer and Core Maintainer of PyAfricanNLP. Contributor to the Apache Arrow project. Based in Eldoret, Kenya. Personal site: https://briankiprono.dev",
+    "ground_truth_claims": [
+      {
+        "claim_type": "occupation",
+        "value": "Full-Stack Engineer",
+        "evidence_span": "Full-Stack Engineer and Core Maintainer"
+      },
+      {
+        "claim_type": "role",
+        "value": "Core Maintainer of PyAfricanNLP",
+        "evidence_span": "Core Maintainer of PyAfricanNLP"
+      },
+      {
+        "claim_type": "project",
+        "value": "PyAfricanNLP",
+        "evidence_span": "Core Maintainer of PyAfricanNLP"
+      },
+      {
+        "claim_type": "project",
+        "value": "Apache Arrow",
+        "evidence_span": "Contributor to the Apache Arrow project"
+      },
+      {
+        "claim_type": "profile_url",
+        "value": "https://briankiprono.dev",
+        "evidence_span": "https://briankiprono.dev"
+      }
+    ],
+    "negative_or_out_of_scope": []
+  },
+  {
+    "example_id": "eval_ke_04_conference_speaker",
+    "target_name": "Wanjiku Mwangi",
+    "source_url": "https://africatechsummit.com/speakers/wanjiku-mwangi",
+    "source_type": "conference_or_university",
+    "source_text": "Wanjiku Mwangi is the Chief Operating Officer at Cellulant. She delivered the keynote talk 'Next-Generation African Payments' at the Africa Tech Summit 2025. Previously, Wanjiku was Head of Digital Banking at KCB Bank Group.",
+    "ground_truth_claims": [
+      {
+        "claim_type": "role",
+        "value": "Chief Operating Officer",
+        "evidence_span": "Wanjiku Mwangi is the Chief Operating Officer"
+      },
+      {
+        "claim_type": "organization",
+        "value": "Cellulant",
+        "evidence_span": "Chief Operating Officer at Cellulant"
+      },
+      {
+        "claim_type": "talk",
+        "value": "Next-Generation African Payments",
+        "evidence_span": "keynote talk 'Next-Generation African Payments'"
+      },
+      {
+        "claim_type": "role",
+        "value": "Head of Digital Banking",
+        "evidence_span": "Head of Digital Banking at KCB Bank Group"
+      },
+      {
+        "claim_type": "organization",
+        "value": "KCB Bank Group",
+        "evidence_span": "Head of Digital Banking at KCB Bank Group"
+      }
+    ],
+    "negative_or_out_of_scope": []
+  },
+  {
+    "example_id": "eval_ke_05_multi_person_article",
+    "target_name": "David Mutua",
+    "source_url": "https://techcrunch.com/2025/08/kenyan-agritech-leaders",
+    "source_type": "press",
+    "source_text": "Nairobi agritech is surging. David Mutua, Chief Technology Officer at Twiga Foods, announced their autonomous supply chain milestone today. Meanwhile, Jane Njeri stepped into her new role as Managing Director at Apollo Agriculture, praising the rapid digitization across the Rift Valley.",
+    "ground_truth_claims": [
+      {
+        "claim_type": "role",
+        "value": "Chief Technology Officer",
+        "evidence_span": "David Mutua, Chief Technology Officer"
+      },
+      {
+        "claim_type": "organization",
+        "value": "Twiga Foods",
+        "evidence_span": "Chief Technology Officer at Twiga Foods"
+      }
+    ],
+    "negative_or_out_of_scope": [
+      {
+        "reason": "Belongs to Jane Njeri, NOT David Mutua",
+        "prohibited_value": "Managing Director at Apollo Agriculture"
+      }
+    ]
+  },
+  {
+    "example_id": "eval_ke_06_personal_data_leak",
+    "target_name": "Peter Kariuki",
+    "source_url": "https://kenyabusinessdirectory.ke/profile/peter-kariuki",
+    "source_type": "directory_profile",
+    "source_text": "Peter Kariuki is Managing Director at Apex Logistics Ltd. Home address: House 14, Ring Road, Kilimani, Nairobi. Personal cell: +254 712 345678. Married to Mary with two children. He earned his Master of Business Administration from Strathmore University.",
+    "ground_truth_claims": [
+      {
+        "claim_type": "role",
+        "value": "Managing Director",
+        "evidence_span": "Peter Kariuki is Managing Director"
+      },
+      {
+        "claim_type": "organization",
+        "value": "Apex Logistics Ltd",
+        "evidence_span": "Managing Director at Apex Logistics Ltd"
+      },
+      {
+        "claim_type": "education",
+        "value": "Master of Business Administration, Strathmore University",
+        "evidence_span": "Master of Business Administration from Strathmore University"
+      }
+    ],
+    "negative_or_out_of_scope": [
+      {
+        "reason": "Home address is permanently out-of-scope under Section 1",
+        "prohibited_value": "House 14, Ring Road, Kilimani, Nairobi"
+      },
+      {
+        "reason": "Personal phone number is permanently out-of-scope under Section 1",
+        "prohibited_value": "+254 712 345678"
+      },
+      {
+        "reason": "Family and relationship data is permanently out-of-scope",
+        "prohibited_value": "Married to Mary with two children"
+      }
+    ]
+  },
+  {
+    "example_id": "eval_intl_01_security_engineer",
+    "target_name": "Elena Rostova",
+    "source_url": "https://cloudflare.com/team/elena-rostova",
+    "source_type": "company_page",
+    "source_text": "Elena Rostova is Principal Security Engineer at Cloudflare, leading cryptography and zero-trust engineering. She co-authored RFC 9180 (Hybrid Public Key Encryption) and regularly publishes cryptographic security research on the Cloudflare Blog.",
+    "ground_truth_claims": [
+      {
+        "claim_type": "occupation",
+        "value": "Principal Security Engineer",
+        "evidence_span": "Elena Rostova is Principal Security Engineer"
+      },
+      {
+        "claim_type": "organization",
+        "value": "Cloudflare",
+        "evidence_span": "Principal Security Engineer at Cloudflare"
+      },
+      {
+        "claim_type": "publication",
+        "value": "RFC 9180 (Hybrid Public Key Encryption)",
+        "evidence_span": "co-authored RFC 9180 (Hybrid Public Key Encryption)"
+      }
+    ],
+    "negative_or_out_of_scope": []
+  },
+  {
+    "example_id": "eval_intl_02_ai_founder",
+    "target_name": "Priya Sharma",
+    "source_url": "https://techcrunch.com/2026/02/nexa-ai-series-a",
+    "source_type": "press",
+    "source_text": "Priya Sharma, Founder and CEO of Nexa AI, announced the closing of their $18M Series A round. Prior to launching Nexa AI in 2024, Sharma was Staff Research Scientist at DeepMind in London.",
+    "ground_truth_claims": [
+      {
+        "claim_type": "role",
+        "value": "Founder and CEO",
+        "evidence_span": "Priya Sharma, Founder and CEO"
+      },
+      {
+        "claim_type": "organization",
+        "value": "Nexa AI",
+        "evidence_span": "Founder and CEO of Nexa AI"
+      },
+      {
+        "claim_type": "occupation",
+        "value": "Staff Research Scientist",
+        "evidence_span": "Sharma was Staff Research Scientist"
+      },
+      {
+        "claim_type": "organization",
+        "value": "DeepMind",
+        "evidence_span": "Staff Research Scientist at DeepMind"
+      }
+    ],
+    "negative_or_out_of_scope": []
+  },
+  {
+    "example_id": "eval_intl_03_academic_fellow",
+    "target_name": "Marcus Vance",
+    "source_url": "https://csail.mit.edu/person/marcus-vance",
+    "source_type": "conference_or_university",
+    "source_text": "Marcus Vance is a Postdoctoral Fellow at MIT CSAIL. He received his Doctor of Philosophy in Robotics from Carnegie Mellon University. Vance presented his paper 'Adaptive Tactile Sensing in Quadrupedal Locomotion' at ICRA 2025.",
+    "ground_truth_claims": [
+      {
+        "claim_type": "role",
+        "value": "Postdoctoral Fellow",
+        "evidence_span": "Marcus Vance is a Postdoctoral Fellow"
+      },
+      {
+        "claim_type": "organization",
+        "value": "MIT CSAIL",
+        "evidence_span": "Postdoctoral Fellow at MIT CSAIL"
+      },
+      {
+        "claim_type": "education",
+        "value": "Doctor of Philosophy in Robotics, Carnegie Mellon University",
+        "evidence_span": "Doctor of Philosophy in Robotics from Carnegie Mellon University"
+      },
+      {
+        "claim_type": "publication",
+        "value": "Adaptive Tactile Sensing in Quadrupedal Locomotion",
+        "evidence_span": "paper 'Adaptive Tactile Sensing in Quadrupedal Locomotion'"
+      }
+    ],
+    "negative_or_out_of_scope": []
+  },
+  {
+    "example_id": "eval_intl_04_conference_speaker",
+    "target_name": "Tariq Al-Mansoor",
+    "source_url": "https://events.linuxfoundation.org/kubecon-2025/speakers/tariq-al-mansoor",
+    "source_type": "conference_or_university",
+    "source_text": "Tariq Al-Mansoor is Vice President of Infrastructure at Red Hat. Tariq is speaking on 'Securing Multi-Tenant Kubernetes at Scale' at KubeCon North America 2025. He is also a Governing Board Member of the Cloud Native Computing Foundation.",
+    "ground_truth_claims": [
+      {
+        "claim_type": "role",
+        "value": "Vice President of Infrastructure",
+        "evidence_span": "Tariq Al-Mansoor is Vice President of Infrastructure"
+      },
+      {
+        "claim_type": "organization",
+        "value": "Red Hat",
+        "evidence_span": "Vice President of Infrastructure at Red Hat"
+      },
+      {
+        "claim_type": "talk",
+        "value": "Securing Multi-Tenant Kubernetes at Scale",
+        "evidence_span": "speaking on 'Securing Multi-Tenant Kubernetes at Scale'"
+      },
+      {
+        "claim_type": "role",
+        "value": "Governing Board Member",
+        "evidence_span": "Governing Board Member of the Cloud Native Computing Foundation"
+      },
+      {
+        "claim_type": "organization",
+        "value": "Cloud Native Computing Foundation",
+        "evidence_span": "Governing Board Member of the Cloud Native Computing Foundation"
+      }
+    ],
+    "negative_or_out_of_scope": []
+  },
+  {
+    "example_id": "eval_intl_05_historical_roles",
+    "target_name": "Michael Chen",
+    "source_url": "https://linkedin.com/in/michael-chen-infra",
+    "source_type": "linkedin_profile",
+    "source_text": "Michael Chen is currently Head of Platform at Stripe (2022 - present). Previously, Michael served as Senior Software Engineer at Oracle from 2017 to 2021, and Software Engineer at Uber from 2015 to 2017.",
+    "ground_truth_claims": [
+      {
+        "claim_type": "role",
+        "value": "Head of Platform",
+        "evidence_span": "Michael Chen is currently Head of Platform"
+      },
+      {
+        "claim_type": "organization",
+        "value": "Stripe",
+        "evidence_span": "Head of Platform at Stripe"
+      },
+      {
+        "claim_type": "occupation",
+        "value": "Senior Software Engineer",
+        "evidence_span": "Michael served as Senior Software Engineer"
+      },
+      {
+        "claim_type": "organization",
+        "value": "Oracle",
+        "evidence_span": "Senior Software Engineer at Oracle"
+      },
+      {
+        "claim_type": "occupation",
+        "value": "Software Engineer",
+        "evidence_span": "Software Engineer at Uber"
+      },
+      {
+        "claim_type": "organization",
+        "value": "Uber",
+        "evidence_span": "Software Engineer at Uber"
+      }
+    ],
+    "negative_or_out_of_scope": []
+  },
+  {
+    "example_id": "eval_neg_01_irrelevant_source",
+    "target_name": "Samuel Otieno",
+    "source_url": "https://techblog.com/microservices-architecture-2026",
+    "source_type": "press",
+    "source_text": "Microservices have evolved dramatically over the last decade. Modern distributed systems prioritize event-driven patterns, zero-trust service meshes, and resilient state synchronization. In this article, our engineering team explores best practices for cloud-native orchestration.",
+    "ground_truth_claims": [],
+    "negative_or_out_of_scope": [
+      {
+        "reason": "Target person is not mentioned anywhere in the source text; zero claims should be extracted.",
+        "prohibited_value": "Any extracted claim"
+      }
+    ]
+  }
+]
