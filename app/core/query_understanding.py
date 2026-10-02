@@ -59,16 +59,33 @@ async def understand_query(
     Falls back to a deterministic minimal context if the AI call fails,
     so a temporary model outage never breaks the search entirely.
     """
+    import asyncio
     hints_text = request.hints.model_dump(exclude_none=True)
     prompt = _PROMPT_TEMPLATE.format(name=request.name, hints=hints_text)
 
+    # Pre-generate deterministic name variants for immediate fallback
+    clean_name = request.name.strip()
+    parts = clean_name.split()
+    fallback_variants = [clean_name]
+    if len(parts) >= 2:
+        fallback_variants.append(f"{parts[0][0]}. {' '.join(parts[1:])}")
+        fallback_variants.append(f"{parts[0]} {parts[-1]}")
+    fallback_ctx = QueryContext(
+        canonical_name=clean_name,
+        name_variants=list(dict.fromkeys(fallback_variants)),
+        hints=hints_text,
+    )
+
     try:
-        raw = await adapter.complete(
-            prompt=prompt,
-            response_schema=QueryContext,
-            model_tier="extraction",
-            system_instruction=_SYSTEM_INSTRUCTION,
-            stage="query_understanding",
+        raw = await asyncio.wait_for(
+            adapter.complete(
+                prompt=prompt,
+                response_schema=QueryContext,
+                model_tier="extraction",
+                system_instruction=_SYSTEM_INSTRUCTION,
+                stage="query_understanding",
+            ),
+            timeout=3.5,
         )
         ctx = QueryContext(**raw)
         logger.info(
@@ -78,14 +95,10 @@ async def understand_query(
         )
         return ctx
     except Exception as exc:
-        logger.warning(
-            "query_understanding.fallback",
+        logger.info(
+            "query_understanding.fast_fallback",
             error=str(exc),
             name=request.name,
         )
-        # Deterministic fallback — no AI, no crash.
-        return QueryContext(
-            canonical_name=request.name.strip(),
-            name_variants=[request.name.strip()],
-            hints=hints_text,
-        )
+        return fallback_ctx
+

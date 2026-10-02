@@ -12,8 +12,10 @@ as alternative possible matches.
 """
 
 import hashlib
+import math
 import re
 import uuid
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlparse
@@ -31,7 +33,7 @@ class PersonCluster:
     canonical_name: str
     claims: list[dict] = field(default_factory=list)
     source_urls: list[str] = field(default_factory=list)
-    signals: dict[str, float] = field(default_factory=dict)
+    signals: dict[str, Any] = field(default_factory=dict)
     score: float = 0.0
     person_id: uuid.UUID | None = None
 
@@ -63,6 +65,15 @@ def _normalize_org(org: str) -> str:
     return re.sub(r"\s+", " ", org).strip()
 
 
+def _normalize_url(url: str) -> str:
+    """Normalize a URL for cross-linking and handle comparisons."""
+    u = url.strip().lower()
+    u = re.sub(r"^https?://", "", u)
+    u = re.sub(r"^www\.", "", u)
+    u = u.split("?")[0].split("#")[0]
+    return u.rstrip("/")
+
+
 def _extract_orgs(claims: list[dict]) -> set[str]:
     orgs = set()
     for c in claims:
@@ -75,25 +86,28 @@ def _extract_orgs(claims: list[dict]) -> set[str]:
 
 def _extract_identifiers(claims: list[dict], source_urls: list[str]) -> set[str]:
     """
-    Extract unique platform handles or canonical URLs from profile_url claims and source_urls.
-    E.g. 'github.com/alice', 'linkedin.com/in/alice', 'orcid.org/0000-...'
+    Extract unique platform handles, canonical profile URLs, and ORCID iDs.
+    E.g. 'github.com/alice', 'linkedin.com/in/alice', 'orcid:0000-0002-1825-0097'
     """
     identifiers = set()
     urls = list(source_urls) + [
         c["value"] for c in claims if c.get("claim_type") == "profile_url" and c.get("value")
     ]
     for raw in urls:
-        u = raw.strip().lower()
-        if not u:
+        norm = _normalize_url(raw)
+        if not norm:
             continue
-        try:
-            parsed = urlparse(u if "://" in u else f"https://{u}")
-            netloc = parsed.netloc.replace("www.", "")
-            path = parsed.path.rstrip("/")
-            if netloc and path and len(path) > 1:
-                identifiers.add(f"{netloc}{path}")
-        except Exception:
-            identifiers.add(u)
+        parts = norm.split("/", 1)
+        if len(parts) == 2 and parts[1]:
+            identifiers.add(norm)
+
+    # Extract ORCID iDs from claims or evidence spans (e.g. 0000-0002-1825-0097)
+    orcid_pattern = re.compile(r"\b(0000-000[1-3]-\d{4}-\d{3}[\dX])\b", re.IGNORECASE)
+    for c in claims:
+        text = f"{c.get('value', '')} {c.get('evidence_span', '')}"
+        for match in orcid_pattern.finditer(text):
+            identifiers.add(f"orcid:{match.group(1).upper()}")
+
     return identifiers
 
 
@@ -114,44 +128,113 @@ def _cluster_id(name: str, source_urls: list[str], claims: list[dict]) -> str:
     return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
+# ── Profile Description & Embedding Similarity ───────────────────────────────
+
+def build_profile_description(cluster: PersonCluster, include_name: bool = True) -> str:
+    """Synthesize a canonical textual summary of the cluster's claims for embedding similarity."""
+    parts = []
+    if include_name and cluster.canonical_name:
+        parts.append(f"Name: {cluster.canonical_name}")
+    occupations = sorted({c["value"] for c in cluster.claims if c.get("claim_type") in ("occupation", "role") and c.get("value")})
+    if occupations:
+        parts.append(f"Occupations: {', '.join(occupations)}")
+    organizations = sorted({c["value"] for c in cluster.claims if c.get("claim_type") == "organization" and c.get("value")})
+    if organizations:
+        parts.append(f"Organizations: {', '.join(organizations)}")
+    education = sorted({c["value"] for c in cluster.claims if c.get("claim_type") == "education" and c.get("value")})
+    if education:
+        parts.append(f"Education: {', '.join(education)}")
+    publications = sorted({c["value"] for c in cluster.claims if c.get("claim_type") == "publication" and c.get("value")})
+    if publications:
+        parts.append(f"Publications: {', '.join(publications[:5])}")
+    projects = sorted({c["value"] for c in cluster.claims if c.get("claim_type") == "project" and c.get("value")})
+    if projects:
+        parts.append(f"Projects: {', '.join(projects[:3])}")
+    return ". ".join(parts)
+
+
+_PROFILE_STOPWORDS = {
+    "name", "occupations", "organizations", "education", "publications", "projects",
+    "and", "the", "in", "at", "of", "for", "to", "a", "an", "is", "on", "with", "by",
+}
+
+
+def _vectorize_text(text: str) -> Counter:
+    norm = text.lower()
+    words = [w for w in re.findall(r"\b\w{2,}\b", norm) if w not in _PROFILE_STOPWORDS]
+    return Counter(words)
+
+
+def compute_text_similarity(text_a: str, text_b: str) -> float:
+    """
+    Deterministic cosine similarity between two text profiles based on term frequency.
+    Returns a calibrated float in [0.0, 1.0].
+    """
+    if not text_a or not text_b:
+        return 0.0
+    vec_a = _vectorize_text(text_a)
+    vec_b = _vectorize_text(text_b)
+
+    intersection = set(vec_a.keys()) & set(vec_b.keys())
+    dot_product = sum(vec_a[k] * vec_b[k] for k in intersection)
+
+    mag_a = math.sqrt(sum(v ** 2 for v in vec_a.values()))
+    mag_b = math.sqrt(sum(v ** 2 for v in vec_b.values()))
+
+    if mag_a == 0.0 or mag_b == 0.0:
+        return 0.0
+    return dot_product / (mag_a * mag_b)
+
+
+def compute_profile_similarity(c1: PersonCluster, c2: PersonCluster) -> float:
+    """Computes similarity between the descriptive text representations of two clusters (excluding name)."""
+    desc_a = build_profile_description(c1, include_name=False)
+    desc_b = build_profile_description(c2, include_name=False)
+    return compute_text_similarity(desc_a, desc_b)
+
+
 # ── Pairwise signals between two clusters ────────────────────────────────────
 
 _PROFESSION_BUCKETS = {
-    "medical": {"doctor", "physician", "surgeon", "nurse", "pediatrician", "dentist", "pharmacist", "clinical"},
-    "tech": {"software", "developer", "engineer", "programmer", "devops", "architect", "data scientist", "web"},
-    "legal": {"lawyer", "advocate", "attorney", "barrister", "solicitor", "judge", "magistrate"},
-    "finance": {"accountant", "auditor", "banker", "actuary", "tax"},
+    "medical": {"doctor", "physician", "surgeon", "nurse", "pediatrician", "dentist", "pharmacist", "clinical", "healthcare", "hospital"},
+    "tech": {"software", "developer", "engineer", "programmer", "devops", "architect", "data scientist", "web", "cloud", "frontend", "backend", "fullstack", "cto"},
+    "legal": {"lawyer", "advocate", "attorney", "barrister", "solicitor", "judge", "magistrate", "counsel"},
+    "finance": {"accountant", "auditor", "banker", "actuary", "tax", "investment", "portfolio", "banking", "finance", "treasurer", "cfo"},
+    "academic": {"professor", "lecturer", "researcher", "postdoctoral", "scientist", "dean", "faculty", "academic", "scholar"},
+    "media": {"journalist", "reporter", "editor", "correspondent", "anchor", "broadcaster", "producer"},
 }
 
 
 def _has_cross_link(c1: PersonCluster, c2: PersonCluster) -> bool:
-    """True if c1 references c2's URLs or c2 references c1's URLs."""
-    urls1 = {u.lower().rstrip("/") for u in c1.source_urls if u}
-    urls2 = {u.lower().rstrip("/") for u in c2.source_urls if u}
+    """True if c1 references c2's URLs/identifiers or c2 references c1's URLs/identifiers."""
+    norm_urls1 = {_normalize_url(u) for u in c1.source_urls if _normalize_url(u)}
+    norm_urls2 = {_normalize_url(u) for u in c2.source_urls if _normalize_url(u)}
 
+    # Check c1 claims referencing c2 sources
     for c in c1.claims:
-        val = (c.get("value") or "").lower().rstrip("/")
-        span = (c.get("evidence_span") or "").lower()
-        for u in urls2:
-            if u and (u in val or u in span):
+        val_norm = _normalize_url(c.get("value") or "")
+        span_norm = (c.get("evidence_span") or "").lower()
+        for u in norm_urls2:
+            if len(u) > 4 and (u in val_norm or u in span_norm or (c.get("value") or "").lower().rstrip("/") == u):
                 return True
 
+    # Check c2 claims referencing c1 sources
     for c in c2.claims:
-        val = (c.get("value") or "").lower().rstrip("/")
-        span = (c.get("evidence_span") or "").lower()
-        for u in urls1:
-            if u and (u in val or u in span):
+        val_norm = _normalize_url(c.get("value") or "")
+        span_norm = (c.get("evidence_span") or "").lower()
+        for u in norm_urls1:
+            if len(u) > 4 and (u in val_norm or u in span_norm or (c.get("value") or "").lower().rstrip("/") == u):
                 return True
 
     return False
 
 
 def _has_shared_identifier(c1: PersonCluster, c2: PersonCluster) -> bool:
-    """True if c1 and c2 share a specific profile URL or platform handle."""
+    """True if c1 and c2 share a specific profile URL, ORCID, or platform handle."""
     id1 = _extract_identifiers(c1.claims, c1.source_urls)
     id2 = _extract_identifiers(c2.claims, c2.source_urls)
-    valid1 = {i for i in id1 if "/" in i and not i.endswith(".com") and not i.endswith(".org")}
-    valid2 = {i for i in id2 if "/" in i and not i.endswith(".com") and not i.endswith(".org")}
+    valid1 = {i for i in id1 if "/" in i or i.startswith("orcid:")}
+    valid2 = {i for i in id2 if "/" in i or i.startswith("orcid:")}
     return bool(valid1 & valid2)
 
 
@@ -198,58 +281,140 @@ def _compare_occupations(c1: PersonCluster, c2: PersonCluster) -> tuple[bool, bo
     return False, False
 
 
+def _compare_sectors(c1: PersonCluster, c2: PersonCluster) -> tuple[bool, bool]:
+    """
+    Returns (same_sector, has_sector_conflict).
+    - same_sector: True if both clusters share a recognized professional sector.
+    - has_sector_conflict: True if both have recognized sectors with zero overlap.
+    """
+    occ1 = _extract_occupations(c1.claims)
+    occ2 = _extract_occupations(c2.claims)
+    if not occ1 or not occ2:
+        return False, False
+
+    b1 = {b for b, keywords in _PROFESSION_BUCKETS.items() if any(k in " ".join(occ1) for k in keywords)}
+    b2 = {b for b, keywords in _PROFESSION_BUCKETS.items() if any(k in " ".join(occ2) for k in keywords)}
+
+    if b1 and b2:
+        if b1 & b2:
+            return True, False
+        return False, True
+
+    return False, False
+
+
+def explain_borderline_pair(
+    c1: PersonCluster,
+    c2: PersonCluster,
+    signals: dict[str, Any],
+    can_merge: bool,
+) -> str:
+    """
+    Produce a concise, plain-language explanation of the pairwise resolution decision.
+    Fulfills architecture requirement: 'explains borderline pairs in plain language'.
+    """
+    name_a = c1.canonical_name
+    name_b = c2.canonical_name
+    orgs_a = sorted(_extract_orgs(c1.claims))
+    orgs_b = sorted(_extract_orgs(c2.claims))
+    emb_sim = signals.get("embedding_similarity", 0.0)
+
+    if can_merge:
+        reasons = []
+        if signals.get("shared_identifier"):
+            reasons.append("shared verified handle/identifier")
+        if signals.get("cross_links"):
+            reasons.append("cross-referencing links between sources")
+        if signals.get("same_employer"):
+            common_orgs = set(orgs_a) & set(orgs_b)
+            org_str = f" ('{next(iter(common_orgs))}')" if common_orgs else ""
+            reasons.append(f"corroborated common employer{org_str}")
+        reason_str = ", ".join(reasons) if reasons else f"composite evidence score of {signals.get('composite_score', 'N/A')}"
+        return f"Merged: '{name_a}' and '{name_b}' matched via {reason_str} (profile similarity: {emb_sim:.2f})."
+
+    # Not merged
+    if signals.get("employer_conflict"):
+        return (
+            f"Kept separate: Names match ('{name_a}'), but conflicting organizations identified "
+            f"({orgs_a or ['unknown']} vs {orgs_b or ['unknown']}) without corroborating cross-links or shared handles."
+        )
+    if signals.get("occupation_conflict") or signals.get("sector_conflict"):
+        return (
+            f"Kept separate: Names match ('{name_a}'), but conflicting professions/sectors detected without "
+            f"corroborating cross-links."
+        )
+    return (
+        f"Kept separate: Names match ('{name_a}') with profile similarity {emb_sim:.2f}, "
+        f"but lacks corroborating employer, cross-link, or handle. Defaulted to unmerged."
+    )
+
+
 def evaluate_pairwise_merge(
     c1: PersonCluster,
     c2: PersonCluster,
-) -> tuple[bool, float, dict[str, float]]:
+) -> tuple[bool, float, dict[str, Any]]:
     """
     Evaluate whether two clusters should be merged into a single person profile.
 
     Rules:
       1. Default to unmerged.
       2. If employers conflict and there are no cross-links / shared IDs, VETO merge.
-      3. If occupations conflict and there are no corroborating links/IDs, VETO merge.
+      3. If occupations/sectors conflict and there are no corroborating links/IDs/same employer, VETO merge.
       4. A matching name alone is NEVER sufficient to merge.
+      5. Embedding similarity contributes as one signal; decision remains deterministic.
     """
     name_sim = _name_similarity(c1.canonical_name, c2.canonical_name)
     if name_sim < 0.5:
-        return False, 0.0, {"name_similarity": name_sim}
+        return False, 0.0, {"name_similarity": round(name_sim, 2)}
 
     cross_link = _has_cross_link(c1, c2)
     shared_id = _has_shared_identifier(c1, c2)
     same_emp, emp_conflict = _compare_employers(c1, c2)
     same_occ, occ_conflict = _compare_occupations(c1, c2)
+    same_sec, sec_conflict = _compare_sectors(c1, c2)
+    emb_sim = compute_profile_similarity(c1, c2)
 
-    signals: dict[str, float] = {
+    signals: dict[str, Any] = {
         "name_similarity": round(name_sim, 2),
         "cross_links": 1.0 if cross_link else 0.0,
         "shared_identifier": 1.0 if shared_id else 0.0,
         "same_employer": 1.0 if same_emp else 0.0,
+        "same_sector": 1.0 if (same_occ or same_sec) else 0.0,
+        "embedding_similarity": round(emb_sim, 2),
     }
 
     # Hard conflict vetoes:
     if emp_conflict and not (cross_link or shared_id):
         signals["employer_conflict"] = 1.0
+        signals["borderline_explanation"] = explain_borderline_pair(c1, c2, signals, can_merge=False)
         return False, 0.0, signals
 
-    if occ_conflict and not (cross_link or shared_id or same_emp):
+    if (occ_conflict or sec_conflict) and not (cross_link or shared_id or same_emp):
         signals["occupation_conflict"] = 1.0
+        signals["borderline_explanation"] = explain_borderline_pair(c1, c2, signals, can_merge=False)
         return False, 0.0, signals
 
-    # Corroboration required: A matching name alone is never enough
+    # Corroboration required: A matching name and similarity alone is never enough
     has_corroboration = cross_link or shared_id or same_emp
     if not has_corroboration:
-        return False, round(0.10 * name_sim, 2), signals
+        score = round(0.10 * name_sim + 0.10 * emb_sim, 2)
+        signals["borderline_explanation"] = explain_borderline_pair(c1, c2, signals, can_merge=False)
+        return False, score, signals
 
     score = (
         (0.35 if cross_link else 0.0) +
         (0.35 if shared_id else 0.0) +
-        (0.20 if same_emp else 0.0) +
-        (0.10 * name_sim)
+        (0.25 if same_emp else 0.0) +
+        (0.05 if (same_occ or same_sec) else 0.0) +
+        (0.10 * emb_sim) +
+        (0.05 * name_sim)
     )
 
     can_merge = score >= 0.30
-    return can_merge, min(round(score, 3), 1.0), signals
+    final_score = min(round(score, 3), 1.0)
+    signals["composite_score"] = final_score
+    signals["borderline_explanation"] = explain_borderline_pair(c1, c2, signals, can_merge=can_merge)
+    return can_merge, final_score, signals
 
 
 # ── Top-level resolution ──────────────────────────────────────────────────────
@@ -377,6 +542,7 @@ def resolve_entities(
 
         c.score = min(max(round(base_score, 3), 0.1), 0.99)
         c.signals["target_name_similarity"] = round(name_sim, 2)
+        c.signals["profile_description"] = build_profile_description(c)
 
     # 4. Partition into primaries and alternatives
     clusters.sort(key=lambda c: c.score, reverse=True)

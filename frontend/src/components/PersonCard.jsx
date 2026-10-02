@@ -17,7 +17,9 @@ import {
   Copy,
   Check,
   FileText,
+  Printer,
 } from './Icons'
+
 
 function renderPlatformIcon(iconType, size = 13) {
   switch (iconType) {
@@ -236,14 +238,37 @@ export default function PersonCard({ person, navigate }) {
           </button>
         </div>
 
-        {/* CTA Button */}
-        <button
-          className="btn btn-primary full-profile-btn"
-          onClick={() => navigate(`/persons/${person.person_id}`)}
-          id={`view-profile-${person.person_id}`}
-        >
-          View Full Dossier →
-        </button>
+        {/* CTA Buttons */}
+        <div style={{ display: 'flex', gap: 6, width: '100%', marginTop: 8 }}>
+          <button
+            className="btn btn-primary full-profile-btn"
+            style={{ flex: 1, margin: 0 }}
+            onClick={() => navigate(`/persons/${person.person_id}`)}
+            id={`view-profile-${person.person_id}`}
+          >
+            View Full Dossier →
+          </button>
+          <a
+            href={`/api/v1/persons/${person.person_id}/report?format=html`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-secondary"
+            style={{
+              padding: '6px 10px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              textDecoration: 'none',
+              fontSize: 12,
+            }}
+            title="Export Evidence Report (Printable/PDF)"
+            id={`export-report-btn-${person.person_id}`}
+          >
+            <Printer size={13} />
+            <span>Report</span>
+          </a>
+        </div>
+
 
         {person.alternatives?.length > 0 && (
           <div className="alternatives-note">

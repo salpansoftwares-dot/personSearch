@@ -218,3 +218,256 @@ async def test_end_to_end_search_does_not_scramble_profiles(db_session: AsyncSes
     res = await db_session.execute(select(Person).where(Person.canonical_name == name))
     db_persons = res.scalars().all()
     assert len(db_persons) == 2
+
+
+# ── V2 Feature 2 Tests: Cross-links, Identifiers, Embeddings, Explanations ─────
+
+def test_normalize_url():
+    from app.core.entity_resolution import _normalize_url
+    assert _normalize_url("https://www.linkedin.com/in/alice/") == "linkedin.com/in/alice"
+    assert _normalize_url("http://github.com/alice?tab=repositories#header") == "github.com/alice"
+    assert _normalize_url("https://sub.domain.org/path/") == "sub.domain.org/path"
+
+
+def test_cross_link_variations():
+    """Verify bidirectional cross-link detection across query params and trailing slashes."""
+    from app.core.entity_resolution import _has_cross_link, PersonCluster
+
+    c1 = PersonCluster(
+        cluster_id="c1",
+        canonical_name="Jane Doe",
+        claims=[
+            {
+                "claim_type": "profile_url",
+                "value": "https://www.github.com/janedoe?tab=overview",
+                "evidence_span": "GitHub: https://github.com/janedoe",
+            }
+        ],
+        source_urls=["https://janedoe.com"],
+    )
+    c2 = PersonCluster(
+        cluster_id="c2",
+        canonical_name="Jane Doe",
+        claims=[
+            {"claim_type": "occupation", "value": "Developer", "evidence_span": "Developer"}
+        ],
+        source_urls=["https://github.com/janedoe/"],
+    )
+
+    assert _has_cross_link(c1, c2) is True
+    assert _has_cross_link(c2, c1) is True
+
+
+def test_orcid_shared_identifier():
+    """ORCID iDs appearing in evidence spans or claims act as strong shared identifiers."""
+    from app.core.entity_resolution import _has_shared_identifier, evaluate_pairwise_merge, PersonCluster
+
+    c1 = PersonCluster(
+        cluster_id="c1",
+        canonical_name="Dr. Alice Smith",
+        claims=[
+            {
+                "claim_type": "publication",
+                "value": "Quantum Computing",
+                "evidence_span": "Author ORCID: 0000-0002-1825-0097",
+            }
+        ],
+        source_urls=["https://arxiv.org/abs/1234.5678"],
+    )
+    c2 = PersonCluster(
+        cluster_id="c2",
+        canonical_name="Alice Smith",
+        claims=[
+            {
+                "claim_type": "education",
+                "value": "PhD Physics",
+                "evidence_span": "ORCID record 0000-0002-1825-0097 verified",
+            }
+        ],
+        source_urls=["https://orcid.org/0000-0002-1825-0097"],
+    )
+
+    assert _has_shared_identifier(c1, c2) is True
+    can_merge, score, signals = evaluate_pairwise_merge(c1, c2)
+    assert can_merge is True
+    assert signals["shared_identifier"] == 1.0
+
+
+def test_sector_matching_and_conflict():
+    """Test sector classification and conflict detection between profession buckets."""
+    from app.core.entity_resolution import _compare_sectors, PersonCluster
+
+    c_tech = PersonCluster(
+        cluster_id="c_tech",
+        canonical_name="Alex",
+        claims=[{"claim_type": "occupation", "value": "Software Engineer"}],
+    )
+    c_tech2 = PersonCluster(
+        cluster_id="c_tech2",
+        canonical_name="Alex",
+        claims=[{"claim_type": "occupation", "value": "DevOps Architect"}],
+    )
+    c_med = PersonCluster(
+        cluster_id="c_med",
+        canonical_name="Alex",
+        claims=[{"claim_type": "occupation", "value": "Pediatric Surgeon"}],
+    )
+
+    same_sec, conflict = _compare_sectors(c_tech, c_tech2)
+    assert same_sec is True
+    assert conflict is False
+
+    same_sec_diff, conflict_diff = _compare_sectors(c_tech, c_med)
+    assert same_sec_diff is False
+    assert conflict_diff is True
+
+
+def test_profile_description_builder():
+    """Verify build_profile_description synthesizes a concise textual representation."""
+    from app.core.entity_resolution import build_profile_description, PersonCluster
+
+    cluster = PersonCluster(
+        cluster_id="c1",
+        canonical_name="David Kim",
+        claims=[
+            {"claim_type": "occupation", "value": "Lead Architect"},
+            {"claim_type": "organization", "value": "Acme Tech"},
+            {"claim_type": "education", "value": "BSc Computer Science"},
+            {"claim_type": "publication", "value": "Distributed Systems at Scale"},
+        ],
+    )
+
+    desc = build_profile_description(cluster)
+    assert "David Kim" in desc
+    assert "Lead Architect" in desc
+    assert "Acme Tech" in desc
+    assert "BSc Computer Science" in desc
+    assert "Distributed Systems at Scale" in desc
+
+
+def test_profile_similarity():
+    """Verify similarity is high for matching domains and low for divergent domains."""
+    from app.core.entity_resolution import compute_profile_similarity, PersonCluster
+
+    c1 = PersonCluster(
+        cluster_id="c1",
+        canonical_name="David Kim",
+        claims=[
+            {"claim_type": "occupation", "value": "Software Architect"},
+            {"claim_type": "organization", "value": "Cloud Systems"},
+            {"claim_type": "project", "value": "Distributed Cache"},
+        ],
+    )
+    c2 = PersonCluster(
+        cluster_id="c2",
+        canonical_name="David Kim",
+        claims=[
+            {"claim_type": "occupation", "value": "Senior Software Architect"},
+            {"claim_type": "organization", "value": "Cloud Systems"},
+            {"claim_type": "project", "value": "Cloud Infrastructure"},
+        ],
+    )
+    c3 = PersonCluster(
+        cluster_id="c3",
+        canonical_name="David Kim",
+        claims=[
+            {"claim_type": "occupation", "value": "Pediatric Nurse"},
+            {"claim_type": "organization", "value": "City Children Hospital"},
+        ],
+    )
+
+    sim_similar = compute_profile_similarity(c1, c2)
+    sim_different = compute_profile_similarity(c1, c3)
+
+    assert sim_similar > 0.50
+    assert sim_different < 0.25
+    assert sim_similar > sim_different
+
+
+def test_borderline_explanation_generation():
+    """Verify explain_borderline_pair produces clear plain-language rationale."""
+    from app.core.entity_resolution import evaluate_pairwise_merge, PersonCluster
+
+    # Case 1: Conflicting employers
+    c1 = PersonCluster(
+        cluster_id="c1",
+        canonical_name="John Kamau",
+        claims=[
+            {"claim_type": "organization", "value": "Safaricom PLC"},
+            {"claim_type": "occupation", "value": "Software Engineer"},
+        ],
+    )
+    c2 = PersonCluster(
+        cluster_id="c2",
+        canonical_name="John Kamau",
+        claims=[
+            {"claim_type": "organization", "value": "Kenya Power"},
+            {"claim_type": "occupation", "value": "Electrical Engineer"},
+        ],
+    )
+
+    can_merge, score, signals = evaluate_pairwise_merge(c1, c2)
+    assert can_merge is False
+    explanation = signals.get("borderline_explanation", "")
+    assert "Kept separate" in explanation
+    assert "conflicting organizations" in explanation.lower() or "conflict" in explanation.lower()
+
+
+def test_embedding_similarity_does_not_override_hard_veto():
+    """
+    Architecture rule:
+    AI proposes, deterministic code decides. High embedding similarity between
+    two profile descriptions must NEVER override hard employer or sector conflict vetoes.
+    """
+    from app.core.entity_resolution import evaluate_pairwise_merge, PersonCluster
+
+    # Two people with very similar skill descriptions but DIFFERENT employers and NO cross-links
+    c1 = PersonCluster(
+        cluster_id="c1",
+        canonical_name="Sarah Connor",
+        claims=[
+            {"claim_type": "occupation", "value": "Security Specialist"},
+            {"claim_type": "organization", "value": "Cyberdyne Systems"},
+            {"claim_type": "project", "value": "Defensive Perimeter Audit"},
+        ],
+    )
+    c2 = PersonCluster(
+        cluster_id="c2",
+        canonical_name="Sarah Connor",
+        claims=[
+            {"claim_type": "occupation", "value": "Security Specialist"},
+            {"claim_type": "organization", "value": "Resistance HQ"},
+            {"claim_type": "project", "value": "Defensive Perimeter Audit"},
+        ],
+    )
+
+    can_merge, score, signals = evaluate_pairwise_merge(c1, c2)
+    assert can_merge is False, "Different employers without cross-links must veto merge despite high similarity"
+    assert signals.get("employer_conflict") == 1.0
+
+
+@pytest.mark.asyncio
+async def test_model_adapter_embed_nvidia_mock():
+    """Test ModelAdapter embed method with mocked API response."""
+    import respx
+    import httpx
+    from app.core.ai.model_adapter import ModelAdapter
+
+    adapter = ModelAdapter()
+    if adapter._provider != "nvidia":
+        pytest.skip("NVIDIA provider test only")
+
+    with respx.mock(base_url="https://integrate.api.nvidia.com/v1") as respx_mock:
+        respx_mock.post("/embeddings").respond(
+            status_code=200,
+            json={
+                "data": [
+                    {"embedding": [0.1, 0.2, 0.3]},
+                    {"embedding": [0.4, 0.5, 0.6]},
+                ]
+            },
+        )
+        embeddings = await adapter.embed(["Text 1", "Text 2"])
+        assert len(embeddings) == 2
+        assert embeddings[0] == [0.1, 0.2, 0.3]
+        assert embeddings[1] == [0.4, 0.5, 0.6]

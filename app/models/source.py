@@ -8,7 +8,7 @@ so we always know where a piece of information came from.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, Text, func
+from sqlalchemy import Boolean, DateTime, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -32,6 +32,11 @@ class Source(Base):
     expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # SHA-256 of the raw page text at retrieval time — used for staleness detection.
+    # A changed hash on re-fetch means the page content has changed and claims need re-verification.
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=False)
+    # True once this source has been flagged as stale (content changed or expiry passed)
+    is_stale: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     # ── Relationships ──────────────────────────────────────────────────────────
     claims: Mapped[list["Claim"]] = relationship(  # noqa: F821

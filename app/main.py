@@ -9,6 +9,7 @@ With workenv:
 """
 
 from contextlib import asynccontextmanager
+import asyncio
 
 import structlog
 from fastapi import FastAPI
@@ -17,6 +18,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import router as api_router
 from app.config import settings
 from app.middleware.audit import AuditMiddleware
+from app.workers.reverify import start_reverify_worker
+from app.workers.retention import start_retention_worker
 
 # ── Structured logging setup ───────────────────────────────────────────────────
 structlog.configure(
@@ -45,7 +48,13 @@ async def lifespan(app: "FastAPI"):
         environment=settings.environment,
         ai_provider=settings.ai_provider,
     )
+    # ── Background workers ──────────────────────────────────────────────────
+    reverify_task = asyncio.create_task(start_reverify_worker())
+    retention_task = asyncio.create_task(start_retention_worker())
     yield
+    # ── Shutdown: cancel workers gracefully ─────────────────────────────────
+    reverify_task.cancel()
+    retention_task.cancel()
     logger.info("app.shutdown")
 
 

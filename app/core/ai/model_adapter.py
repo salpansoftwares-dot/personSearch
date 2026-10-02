@@ -144,11 +144,25 @@ class ModelAdapter:
         # Schema validation — invalid structure means the claim is dropped.
         if response_schema is not None:
             try:
+                if isinstance(parsed, list):
+                    if hasattr(response_schema, "model_fields") and "sentences" in response_schema.model_fields:
+                        parsed = {"sentences": parsed}
+                    elif hasattr(response_schema, "model_fields") and "claims" in response_schema.model_fields:
+                        parsed = {"claims": parsed}
+                if isinstance(parsed, dict) and "sentences" in parsed and isinstance(parsed["sentences"], list):
+                    for item in parsed["sentences"]:
+                        if isinstance(item, dict):
+                            if "claim_id" in item and "claim_ids" not in item:
+                                item["claim_ids"] = [item["claim_id"]]
+                            elif "claim_ids" in item and not isinstance(item["claim_ids"], list):
+                                item["claim_ids"] = [item["claim_ids"]]
                 validated = response_schema.model_validate(parsed)
                 parsed = validated.model_dump()
             except Exception as exc:
                 log.error("ai.call.schema_validation_failed", error=str(exc))
                 raise ValueError(f"Model output failed schema validation: {exc}") from exc
+
+
 
         log.info("ai.call.success")
         return parsed
@@ -230,6 +244,44 @@ class ModelAdapter:
             config=config,
         )
         return response.text
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        """
+        Generate embedding vectors for a list of texts.
+        Returns a list of float vectors. Falls back to an empty list or deterministic
+        vector representation if the remote provider is unavailable.
+        """
+        if not texts:
+            return []
+
+        if self._provider == "nvidia" and self._client is not None:
+            try:
+                payload = {
+                    "input": texts,
+                    "model": "nvidia/nv-embedqa-e5-v5",
+                    "input_type": "passage",
+                }
+                response = await self._client.post("/embeddings", json=payload)
+                if response.status_code == 200:
+                    data = response.json()
+                    return [item["embedding"] for item in data.get("data", [])]
+            except Exception as exc:
+                logger.warning("ai.embed.nvidia_failed", error=str(exc))
+        elif self._provider == "google" and self._client is not None:
+            try:
+                # Google genai embedding
+                results = []
+                for t in texts:
+                    res = await self._client.aio.models.embed_content(
+                        model="text-embedding-004",
+                        contents=t,
+                    )
+                    results.append(res.embedding.values)
+                return results
+            except Exception as exc:
+                logger.warning("ai.embed.google_failed", error=str(exc))
+
+        return []
 
 
 # Singleton — injected via FastAPI dependency.

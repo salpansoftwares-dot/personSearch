@@ -20,7 +20,7 @@ Design rules:
 
 import hashlib
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 import structlog
@@ -33,6 +33,7 @@ from app.models.governance import Suppression
 from app.models.person import Person, PersonClaim, PersonName, PersonStatus
 from app.models.source import Source
 from app.core.entity_resolution import PersonCluster
+from app.config import settings
 
 logger = structlog.get_logger(__name__)
 
@@ -67,7 +68,29 @@ async def is_suppressed(name: str, db: AsyncSession) -> bool:
     return False
 
 
-# ── Source upsert ──────────────────────────────────────────────────────────────
+# ── Source TTL helper ──────────────────────────────────────────────────────────────────
+
+_SOURCE_TYPE_TTL: dict[str, str] = {
+    "linkedin_profile": "source_ttl_linkedin_days",
+    "github_profile":   "source_ttl_github_days",
+    "press":            "source_ttl_press_days",
+    "conference":       "source_ttl_conference_days",
+}
+
+
+def _source_expires_at(source_type: str) -> datetime:
+    """Return the expiry datetime for a source of the given type."""
+    ttl_attr = _SOURCE_TYPE_TTL.get(source_type, "source_ttl_default_days")
+    days = getattr(settings, ttl_attr, settings.source_ttl_default_days)
+    return datetime.now(timezone.utc) + timedelta(days=days)
+
+
+def _claim_expires_at() -> datetime:
+    """Return the expiry datetime for a newly inserted claim."""
+    return datetime.now(timezone.utc) + timedelta(days=settings.claim_expiry_days)
+
+
+# ── Source upsert ──────────────────────────────────────────────────────────────────
 
 async def upsert_source(
     *,
@@ -76,12 +99,18 @@ async def upsert_source(
     title: str,
     source_type: str,
     db: AsyncSession,
+    content_hash: str | None = None,
 ) -> Source:
     """
     Insert or return an existing Source row for this URL.
 
-    Uses ON CONFLICT DO NOTHING so re-collecting the same URL within
-    the expiry window just reuses the existing row.
+    On insert:
+      - Sets expires_at from the source-type TTL config.
+      - Stores the content_hash (SHA-256 of page text) for staleness detection.
+
+    On conflict (URL already exists):
+      - Reuses the existing row (no update to expires_at).
+      - Staleness detection happens in the re-verification worker instead.
     """
     stmt = (
         pg_insert(Source)
@@ -91,6 +120,9 @@ async def upsert_source(
             title=title or "",
             source_type=source_type,
             retrieved_at=datetime.now(timezone.utc),
+            expires_at=_source_expires_at(source_type),
+            content_hash=content_hash,
+            is_stale=False,
         )
         .on_conflict_do_nothing(index_elements=["url"])
         .returning(Source.id)
@@ -154,6 +186,7 @@ async def insert_claim(
             value=value,
             evidence_span=evidence_span,
             confidence=confidence,
+            expires_at=_claim_expires_at(),
         )
         db.add(claim)
         await db.flush()  # get the ID without committing
@@ -302,6 +335,7 @@ async def persist_cluster(
                 domain=cs.domain,
                 title=cs.title or "",
                 source_type=cs.source_type,
+                content_hash=cs.content_hash or None,
                 db=db,
             )
             source_map[url] = source

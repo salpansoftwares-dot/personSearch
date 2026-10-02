@@ -31,6 +31,12 @@ from app.core.persistence import persist_cluster
 from app.core.query_understanding import understand_query, QueryContext
 from app.schemas.search import ClaimOut, EvidenceItem, PersonResult, SearchRequest, SearchResponse
 from app.models.governance import Query as QueryModel
+from app.core.adapters.orcid_adapter import find_orcid_ids_for_name, fetch_orcid_profile
+from app.core.adapters.semantic_scholar_adapter import fetch_semantic_scholar_author
+from app.core.adapters.pubmed_adapter import fetch_pubmed_author
+from app.core.summarizer import generate_profile_summary
+from app.core.conflict_detector import detect_conflicts_and_staleness
+
 
 logger = structlog.get_logger(__name__)
 
@@ -104,33 +110,100 @@ async def run_search(
     candidates: list[CandidateURL] = await discover_candidates(
         context=context,
         provider=provider,
-        max_candidates=20,
+        max_candidates=10,
     )
     log.info("orchestrator.discovery.done", candidates=len(candidates))
 
-    # ── 4. Source collection ──────────────────────────────────────────────────
-    sources: list[CollectedSource] = await collect_sources(
-        urls=[(c.url, c.source_type) for c in candidates],
-        max_concurrent=5,
-    )
-    log.info("orchestrator.collection.done", sources=len(sources))
+    # ── 4 & 4a. Source collection & API adapters in parallel ──────────────────
+    import asyncio as _asyncio
 
-    # ── 5. Snippet fallback ───────────────────────────────────────────────────
-    # For any candidate whose page we couldn't fetch, synthesise a source from
-    # the search-engine snippet (short but often contains name + role + employer).
-    fetched_urls = {s.url for s in sources}
+    org_hint = context.hints.get("organization", "") or ""
+
+    async def _run_api_adapters() -> list[CollectedSource]:
+        adapter_sources: list[CollectedSource] = []
+
+        async def _safe(coro):
+            try:
+                return await coro
+            except Exception as exc:
+                log.error("orchestrator.adapter.error", error=str(exc))
+                return None
+
+        # Run ORCID, Semantic Scholar, and PubMed in parallel
+        orcid_ids = await _safe(
+            find_orcid_ids_for_name(
+                context.canonical_name,
+                organization_hint=org_hint,
+                max_results=1,
+            )
+        ) or []
+
+        orcid_tasks = [
+            _safe(fetch_orcid_profile(oid, name_hint=context.canonical_name))
+            for oid in orcid_ids[:1]
+        ]
+        s2_task = _safe(
+            fetch_semantic_scholar_author(
+                context.canonical_name,
+                organization_hint=org_hint,
+                max_candidates=1,
+            )
+        )
+        pm_task = _safe(
+            fetch_pubmed_author(
+                context.canonical_name,
+                organization_hint=org_hint,
+            )
+        )
+
+        all_adapter_tasks = orcid_tasks + [s2_task, pm_task]
+        adapter_results = await _asyncio.gather(*all_adapter_tasks)
+        for r in adapter_results:
+            if isinstance(r, list):
+                adapter_sources.extend(r)
+            elif isinstance(r, CollectedSource):
+                adapter_sources.append(r)
+
+        return adapter_sources
+
+    # Run web collection and API adapters concurrently!
+    web_collection_task = collect_sources(
+        urls=[(c.url, c.source_type) for c in candidates],
+        max_concurrent=6,
+    )
+    sources, api_adapter_sources = await _asyncio.gather(
+        web_collection_task,
+        _run_api_adapters(),
+    )
+    log.info("orchestrator.collection.done", web_sources=len(sources), api_sources=len(api_adapter_sources))
+
+    # ── 5. Snippet fallback & source prioritization ───────────────────────────
+    fetched_urls = {s.url for s in sources} | {s.url for s in api_adapter_sources}
     snippet_sources: list[CollectedSource] = []
     for candidate in candidates:
         if candidate.url not in fetched_urls and candidate.snippet:
             snippet_sources.append(_snippet_source(candidate))
 
-    all_sources = sources + snippet_sources
+    # Merge: Prioritize structured API adapters + verified fetched web sources
+    _seen_urls: set[str] = set()
+    all_sources: list[CollectedSource] = []
+    for s in api_adapter_sources + sources + snippet_sources:
+        if s.url not in _seen_urls:
+            _seen_urls.add(s.url)
+            all_sources.append(s)
+
+    # Cap to top 7 high-quality sources to keep extraction lightning-fast
+    all_sources = all_sources[:7]
+
     log.info(
         "orchestrator.sources.total",
         fetched=len(sources),
+        api_adapters=len(api_adapter_sources),
         snippet_fallbacks=len(snippet_sources),
-        total=len(all_sources),
+        selected=len(all_sources),
     )
+
+
 
     # ── 6. Extraction (per source, concurrent) ────────────────────────────────
     # Sources are extracted concurrently (up to 5 in parallel) so that the
@@ -138,7 +211,7 @@ async def run_search(
     # A failure on any single source is caught and logged — it never halts the pipeline.
     import asyncio as _asyncio
 
-    extract_semaphore = _asyncio.Semaphore(5)
+    extract_semaphore = _asyncio.Semaphore(7)
 
     async def _extract_one(source: CollectedSource) -> dict | None:
         if not source.text or len(source.text.strip()) < 10:
@@ -147,7 +220,7 @@ async def run_search(
             try:
                 raw_claims = await extract_claims(
                     source_url=source.url,
-                    source_text=source.text,
+                    source_text=source.text[:3000],
                     target_name=context.canonical_name,
                     source_id=source.url,
                     adapter=adapter,
@@ -222,9 +295,8 @@ async def run_search(
 
     all_primary_ids = [p.id for _, p in primary_records]
 
-    results: list[PersonResult] = []
-    for cluster, person in primary_records:
-        # Build claim output — include ALL claims, using uuid4 as fallback claim_id
+    # Process primary profile summaries concurrently in parallel
+    async def _build_primary(cluster: PersonCluster, person: Person) -> PersonResult:
         claims_out = [
             ClaimOut(
                 claim_id=c.get("claim_id") or uuid.uuid4(),
@@ -244,19 +316,37 @@ async def run_search(
             if c.get("value")
         ]
 
-        # Alternatives for this person: other distinct primaries + unmerged alternatives
+        calibrated_claims, conflict_flags, staleness_flags = detect_conflicts_and_staleness(claims_out)
+
+        summary = await generate_profile_summary(
+            canonical_name=cluster.canonical_name,
+            claims=calibrated_claims,
+            adapter=adapter,
+        )
+        if summary and summary.sentences:
+            try:
+                person.summary_json = summary.model_dump(mode="json")
+                await db.flush()
+            except Exception as exc:
+                log.warning("orchestrator.save_summary.failed", error=str(exc))
+
         other_alts = [pid for pid in all_primary_ids if pid != person.id] + alt_ids
 
-        results.append(
-            PersonResult(
-                person_id=person.id,
-                label="possible match",
-                confidence=cluster.score,
-                canonical_name=cluster.canonical_name,
-                claims=claims_out,
-                alternatives=other_alts,
-            )
+        return PersonResult(
+            person_id=person.id,
+            label="possible match",
+            confidence=cluster.score,
+            canonical_name=cluster.canonical_name,
+            claims=calibrated_claims,
+            summary=summary if (summary and summary.sentences) else None,
+            conflict_flags=conflict_flags,
+            staleness_flags=staleness_flags,
+            alternatives=other_alts,
         )
+
+    primary_tasks = [_build_primary(c, p) for c, p in primary_records]
+    results = await _asyncio.gather(*primary_tasks)
+
 
     log.info("orchestrator.search.done", result_count=len(results))
     return SearchResponse(

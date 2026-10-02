@@ -40,12 +40,40 @@ class EvidenceItem(BaseModel):
     retrieved_at: datetime
 
 
+class ConflictFlag(BaseModel):
+    conflict_id: str
+    conflict_type: str = Field(..., description="'job_change', 'source_disagreement', or 'possible_different_person'")
+    severity: str = Field("medium", description="'low', 'medium', or 'high'")
+    claim_ids: list[uuid.UUID] = Field(default_factory=list)
+    description: str
+    action_prompt: str = "Review recommended"
+
+
+class StalenessFlag(BaseModel):
+    claim_id: uuid.UUID
+    source_url: str = ""
+    days_old: int | None = None
+    reason: str
+
+
 class ClaimOut(BaseModel):
     claim_id: uuid.UUID
     type: str
     value: str
     confidence: float
     evidence: list[EvidenceItem]
+    is_stale: bool = False
+    staleness_reason: str | None = None
+
+
+class CitedSentence(BaseModel):
+    text: str
+    claim_ids: list[uuid.UUID]
+
+
+class ProfileSummary(BaseModel):
+    full_text: str
+    sentences: list[CitedSentence]
 
 
 class PersonResult(BaseModel):
@@ -55,6 +83,9 @@ class PersonResult(BaseModel):
     confidence: float
     canonical_name: str
     claims: list[ClaimOut]
+    summary: ProfileSummary | None = None
+    conflict_flags: list[ConflictFlag] = []
+    staleness_flags: list[StalenessFlag] = []
     # IDs of other person clusters that are plausible but not selected
     alternatives: list[uuid.UUID] = []
 

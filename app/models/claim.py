@@ -10,7 +10,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -56,6 +56,13 @@ class Claim(Base):
     )
     # 0.0 – 1.0; derives from source quality and corroboration
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
+    # Retention: when set, the claim is considered expired and eligible for sweep.
+    # Populated by upsert_source based on settings.claim_expiry_days.
+    expires_at: Mapped["datetime | None"] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # True once the retention sweep or a re-verification run has flagged this claim as stale.
+    is_stale: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     # ── Relationships ──────────────────────────────────────────────────────────
     source: Mapped["Source"] = relationship("Source", back_populates="claims")  # noqa: F821

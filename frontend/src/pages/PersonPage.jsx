@@ -21,7 +21,10 @@ import {
   Copy,
   Check,
   Users,
+  Download,
+  Printer,
 } from '../components/Icons'
+
 
 const API = '/api/v1'
 
@@ -154,8 +157,8 @@ export default function PersonPage({ personId, navigate }) {
       <Navbar navigate={navigate} />
 
       <main className="page" id="main-content">
-        {/* Back navigation */}
-        <div className="container" style={{ marginTop: 24 }}>
+        {/* Back navigation & Export action bar */}
+        <div className="container" style={{ marginTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
           <button
             className="back-link"
             style={{ background: 'none', border: 'none', textAlign: 'left', margin: 0, padding: 0 }}
@@ -165,7 +168,72 @@ export default function PersonPage({ personId, navigate }) {
             <ArrowLeft size={14} />
             Back to search
           </button>
+
+          {profile && !loading && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.04em' }}>
+                Export Evidence:
+              </span>
+              <a
+                href={`${API}/persons/${personId}/report?format=html`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-secondary"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  fontSize: 12,
+                  padding: '5px 10px',
+                  textDecoration: 'none',
+                }}
+                id="export-report-html-btn"
+                title="Open executive printable report (with print/save to PDF)"
+              >
+                <Printer size={13} />
+                <span>Print / PDF</span>
+              </a>
+              <a
+                href={`${API}/persons/${personId}/report?format=csv`}
+                download={`evidence_report_${personId}.csv`}
+                className="btn-secondary"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  fontSize: 12,
+                  padding: '5px 10px',
+                  textDecoration: 'none',
+                }}
+                id="export-report-csv-btn"
+                title="Download CSV spreadsheet of verified claims"
+              >
+                <Download size={13} />
+                <span>CSV</span>
+              </a>
+              <a
+                href={`${API}/persons/${personId}/report?format=json`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-secondary"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  fontSize: 12,
+                  padding: '5px 10px',
+                  textDecoration: 'none',
+                }}
+                id="export-report-json-btn"
+                title="Download complete structured JSON audit packet"
+              >
+                <FileText size={13} />
+                <span>Audit JSON</span>
+              </a>
+            </div>
+          )}
         </div>
+
 
         {loading && (
           <div className="status-bar container" style={{ marginTop: 40 }}>

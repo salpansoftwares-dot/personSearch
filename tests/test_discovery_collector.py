@@ -37,6 +37,72 @@ class TestClassifyUrl:
         from app.core.discovery import classify_url
         assert classify_url("https://acme.com/team/john") == "company_page"
 
+    # ── V2 source type tests ───────────────────────────────────────────────────
+
+    def test_semantic_scholar(self):
+        from app.core.discovery import classify_url
+        assert classify_url("https://www.semanticscholar.org/author/Jane-Doe/12345") == "publication"
+
+    def test_ieee_xplore(self):
+        from app.core.discovery import classify_url
+        assert classify_url("https://ieeexplore.ieee.org/author/12345") == "publication"
+
+    def test_acm_dl(self):
+        from app.core.discovery import classify_url
+        assert classify_url("https://dl.acm.org/doi/10.1145/123") == "publication"
+
+    def test_pubmed(self):
+        from app.core.discovery import classify_url
+        assert classify_url("https://pubmed.ncbi.nlm.nih.gov/12345678/") == "publication"
+
+    def test_arxiv(self):
+        from app.core.discovery import classify_url
+        assert classify_url("https://arxiv.org/abs/2301.00001") == "publication"
+
+    def test_kenya_law_registry(self):
+        from app.core.discovery import classify_url
+        assert classify_url("https://kenyalaw.org/person/12345") == "registry"
+
+    def test_nse_registry(self):
+        from app.core.discovery import classify_url
+        assert classify_url("https://nse.co.ke/listed-companies/board-member") == "registry"
+
+    def test_icpak_directory(self):
+        from app.core.discovery import classify_url
+        assert classify_url("https://icpak.com/members/john-kamau") == "directory_profile"
+
+    def test_lsk_directory(self):
+        from app.core.discovery import classify_url
+        assert classify_url("https://lsk.or.ke/advocates/jane-doe") == "directory_profile"
+
+    def test_university_faculty_page(self):
+        from app.core.discovery import classify_url
+        assert classify_url("https://cs.mit.edu/faculty/jane-doe") == "conference_or_university"
+
+    def test_university_profile_page(self):
+        from app.core.discovery import classify_url
+        assert classify_url("https://engineering.uonbi.ac.ke/staff/john-kamau") == "conference_or_university"
+
+    def test_conference_speaker_page(self):
+        from app.core.discovery import classify_url
+        assert classify_url("https://pycon.org/speakers/jane-doe-2024") == "conference_or_university"
+
+    def test_east_african_press(self):
+        from app.core.discovery import classify_url
+        assert classify_url("https://theeastafrican.co.ke/tea/business/12345") == "press"
+
+    def test_capitalfm_press(self):
+        from app.core.discovery import classify_url
+        assert classify_url("https://capitalfm.co.ke/business/news") == "press"
+
+    def test_facebook_out_of_scope(self):
+        from app.core.discovery import classify_url
+        assert classify_url("https://facebook.com/john.doe") is None
+
+    def test_generic_blog_out_of_scope(self):
+        from app.core.discovery import classify_url
+        assert classify_url("https://medium.com/@johndoe/some-post") is None
+
 
 class TestBuildQueries:
     def test_includes_canonical_name(self):

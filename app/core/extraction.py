@@ -93,20 +93,25 @@ async def extract_claims(
 
     Returns a list of verified, in-scope claim dicts.
     """
+    import asyncio
+
     prompt = _PROMPT_TEMPLATE.format(
         url=source_url,
-        text=source_text[:8000],  # cap to avoid very large context
+        text=source_text[:3500],  # cap to keep extraction fast and responsive
         name=target_name,
     )
 
     try:
-        raw = await adapter.complete(
-            prompt=prompt,
-            response_schema=ExtractionResult,
-            model_tier="extraction",
-            system_instruction=_SYSTEM_INSTRUCTION,
-            source_id=source_id,
-            stage="extraction",
+        raw = await asyncio.wait_for(
+            adapter.complete(
+                prompt=prompt,
+                response_schema=ExtractionResult,
+                model_tier="extraction",
+                system_instruction=_SYSTEM_INSTRUCTION,
+                source_id=source_id,
+                stage="extraction",
+            ),
+            timeout=12.0,
         )
         raw_claims = [c.model_dump() if hasattr(c, "model_dump") else c for c in raw.get("claims", [])]
     except Exception as exc:

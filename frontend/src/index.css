@@ -291,6 +291,135 @@ input, textarea, select {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ─── Search Progress Card ──────────────────────────────────────────────── */
+.search-progress-card {
+  width: 100%;
+  max-width: 860px;
+  margin: 24px auto 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 22px 24px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  animation: fadeIn 0.3s ease-out;
+}
+
+.search-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.search-progress-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.search-progress-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.search-progress-timer {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  background: var(--accent-dim);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.search-progress-bar-track {
+  width: 100%;
+  height: 5px;
+  background: var(--bg-raised);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+
+.search-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent) 0%, #a78bfa 100%);
+  border-radius: 999px;
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.search-progress-steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 768px) {
+  .search-progress-steps {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
+.search-progress-step {
+  padding: 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  transition: all 0.25s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.search-progress-step.active {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  box-shadow: 0 0 14px rgba(108, 142, 255, 0.15);
+}
+
+.search-progress-step.completed {
+  border-color: rgba(52, 211, 153, 0.3);
+  background: rgba(52, 211, 153, 0.04);
+}
+
+.search-step-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.search-progress-step.active .search-step-header {
+  color: var(--accent);
+}
+
+.search-progress-step.completed .search-step-header {
+  color: var(--success);
+}
+
+.search-progress-step.pending .search-step-header {
+  color: var(--text-dim);
+}
+
+.search-step-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+}
+
+.search-step-desc {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.35;
+}
+
 .error-banner {
   width: 100%;
   max-width: 860px;

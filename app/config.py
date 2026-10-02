@@ -53,9 +53,10 @@ class Settings(BaseSettings):
     ai_model_reasoning: str = "meta/llama-3.2-90b-vision-instruct"
 
     # ── Source collector ───────────────────────────────────────────────────────
-    collector_timeout_seconds: int = 15
-    collector_max_retries: int = 3
-    collector_per_domain_delay_seconds: float = 1.0
+    collector_timeout_seconds: int = 5
+    collector_max_retries: int = 1
+    collector_per_domain_delay_seconds: float = 0.2
+
 
     # ── Entity resolution ──────────────────────────────────────────────────────
     # Conservative merge: a cluster score must exceed this to auto-merge.
@@ -64,8 +65,21 @@ class Settings(BaseSettings):
     entity_merge_threshold: float = 0.45
 
     # ── Governance ─────────────────────────────────────────────────────────────
-    claim_expiry_days: int = 90  # claims older than this are staleness-flagged
-    removal_sla_hours: int = 72  # target SLA for processing removal requests
+    claim_expiry_days: int = 90          # claims older than this are staleness-flagged
+    removal_sla_hours: int = 72          # target SLA for processing removal requests
+
+    # ── Staleness & retention ──────────────────────────────────────────────────
+    # Source TTL by source type (days). Keys match source_type values in the collector.
+    # Sources not listed here fall back to source_ttl_default_days.
+    source_ttl_default_days: int = 90
+    source_ttl_linkedin_days: int = 30   # LinkedIn profiles change frequently
+    source_ttl_github_days: int = 60
+    source_ttl_press_days: int = 180     # News articles change rarely
+    source_ttl_conference_days: int = 365
+    # How often the re-verification worker sweeps for expired sources (seconds).
+    reverify_sweep_interval_seconds: int = 3600  # 1 hour
+    # Max sources to re-verify in one sweep run (avoid thundering-herd).
+    reverify_batch_size: int = 50
 
     # ── CORS ───────────────────────────────────────────────────────────────────
     cors_origins: list[str] = ["http://localhost:5173"]  # Vite dev server

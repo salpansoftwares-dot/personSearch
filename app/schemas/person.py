@@ -7,7 +7,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field
 
-from app.schemas.search import ClaimOut
+from app.schemas.search import ClaimOut, ConflictFlag, ProfileSummary, StalenessFlag
 
 
 # ── Person profile ─────────────────────────────────────────────────────────────
@@ -18,6 +18,9 @@ class PersonProfile(BaseModel):
     status: str
     updated_at: datetime
     claims: list[ClaimOut]
+    summary: ProfileSummary | None = None
+    conflict_flags: list[ConflictFlag] = []
+    staleness_flags: list[StalenessFlag] = []
     alternatives: list[uuid.UUID] = []
 
 
