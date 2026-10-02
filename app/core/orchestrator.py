@@ -181,11 +181,15 @@ async def run_search(
     primaries, alternatives = resolve_entities(
         candidate_claim_sets=candidate_results,
         target_name=context.canonical_name,
+        hints=request.hints,
     )
     log.info("orchestrator.resolution.done", primaries=len(primaries), alternatives=len(alternatives))
 
-    # ── 8. Claim persistence ──────────────────────────────────────────────────
-    # Save extracted claims + sources to the database after resolution.
+    # If primaries is empty but alternatives exist, promote the top alternative
+    if not primaries and alternatives:
+        primaries = [alternatives.pop(0)]
+
+    # ── 8. Claim persistence & response assembly ─────────────────────────────
     sources_by_url = {s.url: s for s in all_sources}
 
     # Persist alternative clusters first to generate real Person IDs
@@ -202,8 +206,8 @@ async def run_search(
         except Exception as exc:
             log.error("orchestrator.persist.alt.error", error=str(exc))
 
-    # Persist primary clusters and assemble response
-    results: list[PersonResult] = []
+    # Persist primary clusters
+    primary_records: list[tuple[PersonCluster, Person]] = []
     for cluster in primaries:
         try:
             person = await persist_cluster(
@@ -211,16 +215,16 @@ async def run_search(
                 collected_sources=sources_by_url,
                 db=db,
             )
+            if person:
+                primary_records.append((cluster, person))
         except Exception as exc:
             log.error("orchestrator.persist.primary.error", error=str(exc))
-            person = None
 
-        if person is None:
-            # Suppressed identity — skip entirely
-            continue
+    all_primary_ids = [p.id for _, p in primary_records]
 
+    results: list[PersonResult] = []
+    for cluster, person in primary_records:
         # Build claim output — include ALL claims, using uuid4 as fallback claim_id
-        # so the response is never silently empty.
         claims_out = [
             ClaimOut(
                 claim_id=c.get("claim_id") or uuid.uuid4(),
@@ -237,8 +241,12 @@ async def run_search(
                 ],
             )
             for c in cluster.claims
-            if c.get("value")  # only drop claims with no value at all
+            if c.get("value")
         ]
+
+        # Alternatives for this person: other distinct primaries + unmerged alternatives
+        other_alts = [pid for pid in all_primary_ids if pid != person.id] + alt_ids
+
         results.append(
             PersonResult(
                 person_id=person.id,
@@ -246,7 +254,7 @@ async def run_search(
                 confidence=cluster.score,
                 canonical_name=cluster.canonical_name,
                 claims=claims_out,
-                alternatives=alt_ids,
+                alternatives=other_alts,
             )
         )
 

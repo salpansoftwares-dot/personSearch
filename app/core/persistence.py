@@ -325,9 +325,26 @@ async def persist_cluster(
                 )
                 source_map[url] = source
 
-    # ── 3 & 4. Insert claims + upsert person ──────────────────────────────────
-    person = await upsert_person(canonical_name=cluster.canonical_name, db=db)
-    cluster.person_id = person.id
+    # ── 3 & 4. Insert claims + create/link person ────────────────────────────
+    if cluster.person_id:
+        person_res = await db.execute(select(Person).where(Person.id == cluster.person_id))
+        person = person_res.scalar_one_or_none()
+        if person is None:
+            person = Person(
+                id=cluster.person_id,
+                canonical_name=cluster.canonical_name,
+                status=PersonStatus.active,
+            )
+            db.add(person)
+            await db.flush()
+    else:
+        person = Person(
+            canonical_name=cluster.canonical_name,
+            status=PersonStatus.active,
+        )
+        db.add(person)
+        await db.flush()
+        cluster.person_id = person.id
     persisted_claims: list[Claim] = []
 
     for raw_claim in cluster.claims:
