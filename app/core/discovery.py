@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 
 import structlog
 
+from app.core.country_utils import parse_country, text_conflicts_with_country, text_matches_country
 from app.core.query_understanding import QueryContext
 
 logger = structlog.get_logger(__name__)
@@ -171,7 +172,7 @@ class DuckDuckGoProvider(SearchProvider):
         def _do_search() -> list[dict]:
             try:
                 results = []
-                with DDGS_cls(timeout=4) as ddgs:
+                with DDGS_cls(timeout=12) as ddgs:
                     for r in ddgs.text(query, max_results=limit):
                         results.append({
                             "url": r.get("href", ""),
@@ -184,7 +185,7 @@ class DuckDuckGoProvider(SearchProvider):
                 return []
 
         try:
-            results = await asyncio.wait_for(asyncio.to_thread(_do_search), timeout=5.0)
+            results = await asyncio.wait_for(asyncio.to_thread(_do_search), timeout=15.0)
             logger.info("discovery.ddgs_results", query=query[:60], count=len(results))
             return results
         except Exception as exc:
@@ -236,24 +237,62 @@ def _build_queries(context: QueryContext) -> list[str]:
     """
     Build a focused list of search queries from the QueryContext.
     Capped at top 3 high-yield queries to prevent provider throttling.
+    Strictly constrains queries when hints (country, organization, role, sector) are provided.
     """
     queries: list[str] = []
     hints = context.hints
     base_name = context.canonical_name
 
-    # 1. Primary contextual query
-    q1 = f'"{base_name}"'
-    if hints.get("organization"):
-        q1 += f' "{hints["organization"]}"'
-    if hints.get("role"):
-        q1 += f' "{hints["role"]}"'
-    elif hints.get("country"):
-        q1 += f' {hints["country"]}'
-    queries.append(q1)
+    raw_country = hints.get("country")
+    country_info = parse_country(raw_country) if raw_country else None
+    country_term = country_info.name if country_info else (raw_country or "").strip()
+    org = (hints.get("organization") or "").strip()
+    role = (hints.get("role") or "").strip()
+    sector = (hints.get("sector") or "").strip()
 
-    # 2. Key professional registries
-    queries.append(f'site:linkedin.com/in/ "{base_name}"')
-    queries.append(f'site:github.com "{base_name}"')
+    has_hints = bool(country_term or org or role or sector)
+
+    if has_hints:
+        # 1. Primary targeted contextual query
+        primary_parts = [f'"{base_name}"']
+        if org:
+            primary_parts.append(f'"{org}"')
+        if role:
+            primary_parts.append(f'"{role}"')
+        if country_term:
+            primary_parts.append(f'{country_term}')
+        elif sector:
+            primary_parts.append(f'{sector}')
+        queries.append(" ".join(primary_parts))
+
+        # 2. Targeted professional registry (LinkedIn)
+        li_parts = ['site:linkedin.com/in/', f'"{base_name}"']
+        if org:
+            li_parts.append(f'"{org}"')
+        if country_term:
+            li_parts.append(f'{country_term}')
+        elif role:
+            li_parts.append(f'"{role}"')
+        queries.append(" ".join(li_parts))
+
+        # 3. Secondary registry or location/role profile query
+        if country_term and org:
+            queries.append(f'site:linkedin.com/in/ "{base_name}" {country_term}')
+        elif country_term and role:
+            queries.append(f'site:linkedin.com/in/ "{base_name}" "{role}"')
+        elif country_term:
+            queries.append(f'"{base_name}" {country_term} profile')
+        elif org:
+            queries.append(f'"{base_name}" "{org}" profile')
+        elif role:
+            queries.append(f'"{base_name}" "{role}" profile')
+        elif sector:
+            queries.append(f'"{base_name}" {sector}')
+    else:
+        # Generic unhinted queries (default search worldwide)
+        queries.append(f'"{base_name}"')
+        queries.append(f'site:linkedin.com/in/ "{base_name}"')
+        queries.append(f'site:github.com "{base_name}"')
 
     # Deduplicate while preserving order, cap at 3
     return list(dict.fromkeys(queries))[:3]
@@ -266,6 +305,7 @@ async def discover_candidates(
 ) -> list[CandidateURL]:
     """
     Run discovery queries concurrently and return allowlisted candidate URLs.
+    Filters out candidates that explicitly conflict with provided country/org hints.
     """
     import asyncio
     queries = _build_queries(context)
@@ -283,6 +323,11 @@ async def discover_candidates(
         elif isinstance(res, Exception):
             logger.warning("discovery.batch_query_failed", query=queries[i], error=str(res))
 
+    # Parse hints for strict location and context enforcement
+    raw_country = context.hints.get("country")
+    country_info = parse_country(raw_country) if raw_country else None
+    org_hint = (context.hints.get("organization") or "").strip().lower()
+
     # Classify and filter against the source-type allowlist
     candidates: list[CandidateURL] = []
 
@@ -294,12 +339,39 @@ async def discover_candidates(
         if source_type is None:
             logger.debug("discovery.url_not_allowlisted", url=url)
             continue
+
+        snippet = result.get("snippet", "")
+        title = result.get("title", "")
+        combined_text = f"{url} {title} {snippet}"
+
+        effective_rank = rank
+
+        # Strict Country Enforcement:
+        # If the user specified a country hint, drop any candidate that explicitly belongs to another country
+        if country_info:
+            is_conflict, conflicting_country = text_conflicts_with_country(combined_text, country_info)
+            if is_conflict:
+                logger.info(
+                    "discovery.candidate_dropped_country_conflict",
+                    url=url,
+                    target_country=country_info.name,
+                    conflicting_country=conflicting_country,
+                )
+                continue
+
+            if text_matches_country(combined_text, country_info):
+                effective_rank -= 100  # Prioritize candidates matching the specified country
+
+        # Organization Hint Prioritization:
+        if org_hint and org_hint in combined_text.lower():
+            effective_rank -= 50  # Prioritize candidates mentioning the specified organization
+
         candidates.append(
             CandidateURL(
                 url=url,
                 source_type=source_type,
-                rank=rank,
-                snippet=result.get("snippet", ""),
+                rank=effective_rank,
+                snippet=snippet,
             )
         )
 

@@ -172,6 +172,7 @@ async def fetch_pubmed_author(
     name: str,
     *,
     organization_hint: str = "",
+    country_hint: str = "",
     max_papers: int = _MAX_RESULTS,
 ) -> CollectedSource | None:
     """
@@ -180,17 +181,24 @@ async def fetch_pubmed_author(
     Args:
         name: The author's full name.
         organization_hint: Optional affiliation to narrow results.
+        country_hint: Optional country to narrow results.
         max_papers: Maximum number of papers to fetch.
 
     Returns:
         CollectedSource or None if no results or API error.
     """
+    from app.core.country_utils import parse_country
+
     log = logger.bind(name=name)
 
     # Build query: author name with optional affiliation
     query = f'"{name}"[Author]'
     if organization_hint:
         query += f' AND "{organization_hint}"[Affiliation]'
+    elif country_hint:
+        country_info = parse_country(country_hint)
+        country_term = country_info.name if country_info else country_hint
+        query += f' AND "{country_term}"[Affiliation]'
 
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         pmids = await _esearch(query, client=client, max_results=max_papers)

@@ -42,9 +42,9 @@ USER_AGENT = "PersonSearchBot/1.0 (+https://github.com/personsearch; research on
 MAX_CONTENT_BYTES = 512_000       # 512 KB cap on raw HTML
 MAX_TEXT_CHARS = 20_000           # cap on extracted plain text sent to LLM
 ROBOTS_CACHE_TTL = 3600           # seconds to cache robots.txt decisions
-REQUEST_TIMEOUT = min(float(settings.collector_timeout_seconds), 6.0)
-MAX_RETRIES = 1
-DOMAIN_DELAY = min(float(settings.collector_per_domain_delay_seconds), 0.3)
+REQUEST_TIMEOUT = float(settings.collector_timeout_seconds)
+MAX_RETRIES = 2
+DOMAIN_DELAY = float(settings.collector_per_domain_delay_seconds)
 
 
 
@@ -261,7 +261,7 @@ async def collect_source(
 @retry(
     retry=retry_if_exception_type((httpx.TimeoutException, httpx.TransportError)),
     wait=wait_exponential(multiplier=0.5, min=1, max=3),
-    stop=stop_after_attempt(1),
+    stop=stop_after_attempt(MAX_RETRIES),
     reraise=True,
 )
 async def _fetch_with_retry(url: str, client: httpx.AsyncClient) -> tuple[str, int]:

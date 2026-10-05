@@ -85,7 +85,7 @@ async def understand_query(
                 system_instruction=_SYSTEM_INSTRUCTION,
                 stage="query_understanding",
             ),
-            timeout=3.5,
+            timeout=8.0,
         )
         ctx = QueryContext(**raw)
         logger.info(

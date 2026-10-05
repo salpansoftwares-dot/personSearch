@@ -97,7 +97,7 @@ async def extract_claims(
 
     prompt = _PROMPT_TEMPLATE.format(
         url=source_url,
-        text=source_text[:3500],  # cap to keep extraction fast and responsive
+        text=source_text[:6000],  # cap to keep extraction fast and responsive
         name=target_name,
     )
 
@@ -111,7 +111,7 @@ async def extract_claims(
                 source_id=source_id,
                 stage="extraction",
             ),
-            timeout=12.0,
+            timeout=25.0,
         )
         raw_claims = [c.model_dump() if hasattr(c, "model_dump") else c for c in raw.get("claims", [])]
     except Exception as exc:

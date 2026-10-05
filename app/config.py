@@ -53,9 +53,9 @@ class Settings(BaseSettings):
     ai_model_reasoning: str = "meta/llama-3.2-90b-vision-instruct"
 
     # ── Source collector ───────────────────────────────────────────────────────
-    collector_timeout_seconds: int = 5
-    collector_max_retries: int = 1
-    collector_per_domain_delay_seconds: float = 0.2
+    collector_timeout_seconds: int = 15
+    collector_max_retries: int = 2
+    collector_per_domain_delay_seconds: float = 0.3
 
 
     # ── Entity resolution ──────────────────────────────────────────────────────

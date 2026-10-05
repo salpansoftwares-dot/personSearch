@@ -118,6 +118,7 @@ async def run_search(
     import asyncio as _asyncio
 
     org_hint = context.hints.get("organization", "") or ""
+    country_hint = context.hints.get("country", "") or ""
 
     async def _run_api_adapters() -> list[CollectedSource]:
         adapter_sources: list[CollectedSource] = []
@@ -134,6 +135,7 @@ async def run_search(
             find_orcid_ids_for_name(
                 context.canonical_name,
                 organization_hint=org_hint,
+                country_hint=country_hint,
                 max_results=1,
             )
         ) or []
@@ -146,6 +148,7 @@ async def run_search(
             fetch_semantic_scholar_author(
                 context.canonical_name,
                 organization_hint=org_hint,
+                country_hint=country_hint,
                 max_candidates=1,
             )
         )
@@ -153,6 +156,7 @@ async def run_search(
             fetch_pubmed_author(
                 context.canonical_name,
                 organization_hint=org_hint,
+                country_hint=country_hint,
             )
         )
 
@@ -192,8 +196,8 @@ async def run_search(
             _seen_urls.add(s.url)
             all_sources.append(s)
 
-    # Cap to top 7 high-quality sources to keep extraction lightning-fast
-    all_sources = all_sources[:7]
+    # Cap to top 12 high-quality sources for extraction
+    all_sources = all_sources[:12]
 
     log.info(
         "orchestrator.sources.total",
@@ -211,7 +215,7 @@ async def run_search(
     # A failure on any single source is caught and logged — it never halts the pipeline.
     import asyncio as _asyncio
 
-    extract_semaphore = _asyncio.Semaphore(7)
+    extract_semaphore = _asyncio.Semaphore(10)
 
     async def _extract_one(source: CollectedSource) -> dict | None:
         if not source.text or len(source.text.strip()) < 10:
@@ -220,7 +224,7 @@ async def run_search(
             try:
                 raw_claims = await extract_claims(
                     source_url=source.url,
-                    source_text=source.text[:3000],
+                    source_text=source.text[:6000],
                     target_name=context.canonical_name,
                     source_id=source.url,
                     adapter=adapter,

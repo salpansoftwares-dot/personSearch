@@ -23,6 +23,7 @@ from urllib.parse import urlparse
 import structlog
 
 from app.config import settings
+from app.core.country_utils import parse_country, text_conflicts_with_country, text_matches_country
 
 logger = structlog.get_logger(__name__)
 
@@ -514,6 +515,13 @@ def resolve_entities(
             merged = True
 
     # 3. Score each final cluster against target_name and hints
+    # 3. Score each final cluster against target_name and hints
+    hint_org = getattr(hints, "organization", None) or (hints.get("organization") if isinstance(hints, dict) else None) if hints else None
+    hint_role = getattr(hints, "role", None) or (hints.get("role") if isinstance(hints, dict) else None) if hints else None
+    raw_country = getattr(hints, "country", None) or (hints.get("country") if isinstance(hints, dict) else None) if hints else None
+    country_info = parse_country(raw_country) if raw_country else None
+    hint_sector = getattr(hints, "sector", None) or (hints.get("sector") if isinstance(hints, dict) else None) if hints else None
+
     for c in clusters:
         name_sim = _name_similarity(target_name, c.canonical_name)
         base_score = 0.50 + (0.35 * name_sim)
@@ -522,25 +530,54 @@ def resolve_entities(
         if len(c.source_urls) >= 2:
             base_score += 0.15
 
-        # Hint alignment if provided
-        if hints:
-            hint_org = getattr(hints, "organization", None) or (hints.get("organization") if isinstance(hints, dict) else None)
-            if hint_org:
-                orgs = _extract_orgs(c.claims)
-                norm_hint_org = _normalize_org(hint_org)
-                if any(norm_hint_org in o or o in norm_hint_org for o in orgs):
-                    base_score += 0.15
-                elif orgs:
-                    base_score -= 0.20
+        # Combined text representation of the cluster for hint matching
+        cluster_text = " ".join(c.source_urls) + " " + " ".join(
+            f"{cl.get('value', '')} {cl.get('evidence_span', '')}" for cl in c.claims
+        )
 
-            hint_role = getattr(hints, "role", None) or (hints.get("role") if isinstance(hints, dict) else None)
-            if hint_role:
-                occ = _extract_occupations(c.claims)
-                norm_hint_role = hint_role.lower().strip()
-                if any(norm_hint_role in o or o in norm_hint_role for o in occ):
-                    base_score += 0.10
+        # Country Hint Enforcement
+        if country_info:
+            is_conf, conf_country = text_conflicts_with_country(cluster_text, country_info)
+            if is_conf:
+                c.signals["country_conflict"] = True
+                c.signals["conflicting_country"] = conf_country
+                base_score -= 0.45
+            elif text_matches_country(cluster_text, country_info):
+                c.signals["country_match"] = True
+                base_score += 0.25
 
-        c.score = min(max(round(base_score, 3), 0.1), 0.99)
+        # Organization Hint Enforcement
+        if hint_org:
+            orgs = _extract_orgs(c.claims)
+            norm_hint_org = _normalize_org(hint_org)
+            if any(norm_hint_org in o or o in norm_hint_org for o in orgs) or norm_hint_org in cluster_text.lower():
+                c.signals["org_match"] = True
+                base_score += 0.25
+            elif orgs:
+                c.signals["org_conflict"] = True
+                base_score -= 0.35
+
+        # Role Hint Enforcement
+        if hint_role:
+            occ = _extract_occupations(c.claims)
+            norm_hint_role = hint_role.lower().strip()
+            if any(norm_hint_role in o or o in norm_hint_role for o in occ) or norm_hint_role in cluster_text.lower():
+                c.signals["role_match"] = True
+                base_score += 0.15
+            elif occ:
+                base_score -= 0.10
+
+        # Sector Hint Enforcement
+        if hint_sector:
+            occ = _extract_occupations(c.claims)
+            occ_text = " ".join(occ).lower()
+            sector_lower = hint_sector.lower().strip()
+            sector_kws = _PROFESSION_BUCKETS.get(sector_lower, {sector_lower})
+            if any(k in occ_text for k in sector_kws):
+                c.signals["sector_match"] = True
+                base_score += 0.15
+
+        c.score = min(max(round(base_score, 3), 0.05), 0.99)
         c.signals["target_name_similarity"] = round(name_sim, 2)
         c.signals["profile_description"] = build_profile_description(c)
 
@@ -549,9 +586,25 @@ def resolve_entities(
     primaries: list[PersonCluster] = []
     alternatives: list[PersonCluster] = []
 
+    # Check if any cluster has positive matches on provided hints
+    has_positive_hint_cluster = any(
+        c.signals.get("country_match") or c.signals.get("org_match")
+        for c in clusters
+    )
+
     for c in clusters:
         name_sim = _name_similarity(target_name, c.canonical_name)
-        if c.score >= threshold and name_sim >= 0.5:
+        has_conflict = c.signals.get("country_conflict", False) or c.signals.get("org_conflict", False)
+
+        # If user specified hints and there are clusters that match the hint,
+        # uncorroborated clusters with zero hint match should be demoted to alternatives
+        # so the primary result focuses solely on the person in that country / org.
+        has_hint_evidence = c.signals.get("country_match") or c.signals.get("org_match")
+        if (country_info or hint_org) and has_positive_hint_cluster and not has_hint_evidence:
+            alternatives.append(c)
+            continue
+
+        if c.score >= threshold and name_sim >= 0.5 and not has_conflict:
             primaries.append(c)
         else:
             alternatives.append(c)

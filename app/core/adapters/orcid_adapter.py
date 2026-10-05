@@ -212,6 +212,7 @@ async def find_orcid_ids_for_name(
     name: str,
     *,
     organization_hint: str = "",
+    country_hint: str = "",
     max_results: int = 3,
 ) -> list[str]:
     """
@@ -219,9 +220,15 @@ async def find_orcid_ids_for_name(
 
     Returns a list of ORCID iDs (up to max_results).
     """
+    from app.core.country_utils import parse_country
+
     query = f'"{name}"'
     if organization_hint:
         query += f' AND affiliation-org-name:"{organization_hint}"'
+    if country_hint:
+        country_info = parse_country(country_hint)
+        if country_info:
+            query += f' AND (address-country-code:"{country_info.code.upper()}" OR affiliation-org-name:"{country_info.name}")'
 
     params = {
         "q": query,

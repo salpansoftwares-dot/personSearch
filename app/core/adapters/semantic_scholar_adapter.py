@@ -114,6 +114,7 @@ async def fetch_semantic_scholar_author(
     name: str,
     *,
     organization_hint: str = "",
+    country_hint: str = "",
     max_candidates: int = 1,
 ) -> list[CollectedSource]:
     """
@@ -123,29 +124,51 @@ async def fetch_semantic_scholar_author(
     Args:
         name: The author's name to search for.
         organization_hint: Optional affiliation to improve matching.
+        country_hint: Optional country code or name to restrict results.
         max_candidates: Maximum number of author profiles to return.
 
     Returns:
         List of CollectedSource (may be empty if no match or API error).
     """
+    from app.core.country_utils import parse_country, text_matches_country, text_conflicts_with_country
+
     log = logger.bind(name=name)
 
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        candidates = await _search_author(name, client=client, limit=max_candidates + 2)
+        candidates = await _search_author(name, client=client, limit=max_candidates + 4)
 
     if not candidates:
         log.info("semantic_scholar.no_candidates")
         return []
 
+    country_info = parse_country(country_hint) if country_hint else None
+
     # Filter by organization hint if provided
     if organization_hint:
         org_lower = organization_hint.lower()
-        filtered = [
+        matching_org = [
             c for c in candidates
             if any(org_lower in aff.lower() for aff in (c.get("affiliations") or []))
         ]
-        if filtered:
-            candidates = filtered
+        if matching_org:
+            candidates = matching_org
+        else:
+            # Candidates with known conflicting affiliations should be dropped when an org hint was explicitly given
+            candidates = [c for c in candidates if not c.get("affiliations")]
+
+    # Filter by country hint if provided
+    if country_info and candidates:
+        matching_country = []
+        for c in candidates:
+            aff_str = " ".join(c.get("affiliations") or [])
+            if text_matches_country(aff_str, country_info):
+                matching_country.append(c)
+            else:
+                is_conf, _ = text_conflicts_with_country(aff_str, country_info)
+                if not is_conf:
+                    matching_country.append(c)
+        if matching_country:
+            candidates = matching_country
 
     sources: list[CollectedSource] = []
 
