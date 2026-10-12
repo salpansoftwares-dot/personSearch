@@ -225,10 +225,10 @@ async def find_orcid_ids_for_name(
     query = f'"{name}"'
     if organization_hint:
         query += f' AND affiliation-org-name:"{organization_hint}"'
-    if country_hint:
+    elif country_hint:
         country_info = parse_country(country_hint)
         if country_info:
-            query += f' AND (address-country-code:"{country_info.code.upper()}" OR affiliation-org-name:"{country_info.name}")'
+            query += f' AND affiliation-org-name:"{country_info.name}"'
 
     params = {
         "q": query,

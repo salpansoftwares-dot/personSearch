@@ -170,22 +170,43 @@ class DuckDuckGoProvider(SearchProvider):
                 return []
 
         def _do_search() -> list[dict]:
+            # Sanitize search query: strip quotes and site: prefixes that cause DDGS/Mojeek backends to hang
+            clean_q = re.sub(r"site:linkedin\.com(?:/in/)?", "linkedin", query)
+            clean_q = re.sub(r"site:github\.com", "github", clean_q)
+            clean_q = re.sub(r"site:[^\s]+", "", clean_q)
+            clean_q = clean_q.replace('"', '').replace("'", "").strip()
+            clean_q = re.sub(r"\s+", " ", clean_q)
+
             try:
-                results = []
-                with DDGS_cls(timeout=12) as ddgs:
-                    for r in ddgs.text(query, max_results=limit):
+                with DDGS_cls(timeout=8) as ddgs:
+                    for backend in ["duckduckgo", "html"]:
+                        try:
+                            results = []
+                            for r in ddgs.text(clean_q, max_results=limit, backend=backend):
+                                results.append({
+                                    "url": r.get("href", ""),
+                                    "title": r.get("title", ""),
+                                    "snippet": r.get("body", ""),
+                                })
+                            if results:
+                                return results
+                        except Exception:
+                            continue
+                    # fallback without explicit backend argument
+                    results = []
+                    for r in ddgs.text(clean_q, max_results=limit):
                         results.append({
                             "url": r.get("href", ""),
                             "title": r.get("title", ""),
                             "snippet": r.get("body", ""),
                         })
-                return results
+                    return results
             except Exception as exc:
                 logger.warning("discovery.ddgs_search_failed", query=query[:40], error=str(exc))
                 return []
 
         try:
-            results = await asyncio.wait_for(asyncio.to_thread(_do_search), timeout=15.0)
+            results = await asyncio.wait_for(asyncio.to_thread(_do_search), timeout=12.0)
             logger.info("discovery.ddgs_results", query=query[:60], count=len(results))
             return results
         except Exception as exc:

@@ -44,6 +44,12 @@ async def _search_author(
         resp.raise_for_status()
         data = resp.json()
         return data.get("data", []) or []
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 429:
+            logger.warning("semantic_scholar.rate_limited", name=name)
+        else:
+            logger.error("semantic_scholar.search_error", name=name, error=str(exc))
+        return []
     except Exception as exc:
         logger.error("semantic_scholar.search_error", name=name, error=str(exc))
         return []
