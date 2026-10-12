@@ -135,15 +135,18 @@ async def test_generate_profile_summary_with_mock_ai():
         {"claim_id": cid2, "claim_type": "organization", "value": "Safaricom"},
     ]
 
+    # Use a plain object + explicit AsyncMock for .complete to avoid the
+    # "coroutine was never awaited" warning that fires when spec= introspection
+    # on ModelAdapter races async detection in some Python / mock versions.
     mock_adapter = AsyncMock(spec=ModelAdapter)
-    mock_adapter.complete.return_value = {
+    mock_adapter.complete = AsyncMock(return_value={
         "sentences": [
             {
                 "text": "Bob is a Principal Engineer leading cloud architecture at Safaricom.",
                 "claim_ids": [str(cid1), str(cid2)],
             }
         ]
-    }
+    })
 
     summary = await generate_profile_summary("Bob", claims, adapter=mock_adapter)
     assert len(summary.sentences) == 1
@@ -160,16 +163,17 @@ async def test_generate_profile_summary_ai_untraceable_falls_back():
         {"claim_id": cid1, "claim_type": "occupation", "value": "Security Lead"},
     ]
 
+    # Explicit AsyncMock for .complete — avoids "coroutine never awaited" warning
+    # when asyncio.wait_for times out before the mock resolves.
     mock_adapter = AsyncMock(spec=ModelAdapter)
-    # AI returns sentences with fake / missing claim IDs
-    mock_adapter.complete.return_value = {
+    mock_adapter.complete = AsyncMock(return_value={
         "sentences": [
             {
                 "text": "Bob was born in Nairobi and loves sailing.",
-                "claim_ids": [str(uuid.uuid4())],  # fake claim id
+                "claim_ids": [str(uuid.uuid4())],  # fake claim id — should be dropped
             }
         ]
-    }
+    })
 
     summary = await generate_profile_summary("Bob", claims, adapter=mock_adapter)
     # Untraceable sentence was dropped, and synthesizer fallback provided a grounded sentence
